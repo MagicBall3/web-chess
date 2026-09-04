@@ -63,3 +63,74 @@ button {
 button:hover {
   background: #5a4bd4;
 }
+button.secondary {
+  background: transparent;
+  border: 1px solid #6c5ce7;
+  color: #a99cff;
+}
+
+button.secondary:hover {
+  background: rgba(108, 92, 231, 0.15);
+}
+
+.join-block {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.join-block input {
+  flex: 1;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid #3a3a5c;
+  background: #1a1a2e;
+  color: #e8e8f0;
+  font-size: 15px;
+}
+
+.join-block input:focus {
+  outline: none;
+  border-color: #6c5ce7;
+}
+
+.history-panel {
+  margin-top: 20px;
+  text-align: left;
+}
+
+.history-panel h3 {
+  font-size: 14px;
+  color: #a0a0c0;
+  margin-bottom: 8px;
+}
+
+.history-list {
+  max-height: 160px;
+  overflow-y: auto;
+  background: #1a1a2e;
+  border-radius: 8px;
+  padding: 8px 12px;
+}
+
+.history-row {
+  display: flex;
+  gap: 10px;
+  padding: 3px 0;
+  font-size: 14px;
+  font-family: monospace;
+}
+
+.move-num {
+  color: #6c6c8c;
+  width: 24px;
+}
+
+.move-white {
+  flex: 1;
+}
+
+.move-black {
+  flex: 1;
+  color: #c8c8e0;
+}
