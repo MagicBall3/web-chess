@@ -15,6 +15,8 @@ export default function App() {
   const [status, setStatus] = useState('')
   const [moveFrom, setMoveFrom] = useState('')
   const [optionSquares, setOptionSquares] = useState({})
+  const [joinInput, setJoinInput] = useState('')
+  const [showJoinField, setShowJoinField] = useState(false)
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
@@ -54,12 +56,19 @@ export default function App() {
     if (snapshot.exists()) {
       setRoomId(id)
       setColor('b')
+      window.history.replaceState(null, '', '?room=' + id)
     } else {
       setStatus('Комната не найдена')
     }
   }
 
-  // Подсветка клеток, куда можно сходить
+  function handleJoinSubmit() {
+    const trimmed = joinInput.trim()
+    if (trimmed) {
+      joinRoom(trimmed)
+    }
+  }
+
   function getMoveOptions(square) {
     const moves = game.moves({ square, verbose: true })
     if (moves.length === 0) {
@@ -131,7 +140,6 @@ export default function App() {
     getMoveOptions(sourceSquare)
   }
 
-  // Подсветка короля красным при шахе
   const checkSquareStyle = useMemo(() => {
     if (!game.inCheck()) return {}
     const kingColor = game.turn()
@@ -151,12 +159,44 @@ export default function App() {
 
   const customSquareStyles = { ...optionSquares, ...checkSquareStyle }
 
+  // Формируем список ходов из PGN парами (белые/чёрные)
+  const moveHistory = useMemo(() => {
+    const verboseHistory = game.history()
+    const pairs = []
+    for (let i = 0; i < verboseHistory.length; i += 2) {
+      pairs.push({
+        num: i / 2 + 1,
+        white: verboseHistory[i],
+        black: verboseHistory[i + 1] || '',
+      })
+    }
+    return pairs
+  }, [game])
+
+  const turnText = game.turn() === color ? 'Твой ход' : 'Ход соперника'
+
   if (!roomId) {
     return (
       <div className="app-container">
         <div className="card">
           <h1>Web Chess</h1>
           <button onClick={createRoom}>Создать комнату</button>
+
+          {!showJoinField ? (
+            <button className="secondary" onClick={() => setShowJoinField(true)}>
+              Войти в комнату
+            </button>
+          ) : (
+            <div className="join-block">
+              <input
+                type="text"
+                placeholder="ID комнаты"
+                value={joinInput}
+                onChange={(e) => setJoinInput(e.target.value)}
+              />
+              <button onClick={handleJoinSubmit}>Подключиться</button>
+            </div>
+          )}
           <p>{status}</p>
         </div>
       </div>
@@ -167,7 +207,7 @@ export default function App() {
     <div className="app-container">
       <div className="card board-card">
         <h2>Комната: {roomId}</h2>
-        <p>Ты играешь за: {color === 'w' ? 'белых' : 'чёрных'}</p>
+        <p>Ты играешь за: {color === 'w' ? 'белых' : 'чёрных'} — {turnText}</p>
         <p className="link-text">Ссылка для друга: {window.location.href}</p>
         <div className="board-wrapper">
           <Chessboard
@@ -181,6 +221,24 @@ export default function App() {
             customLightSquareStyle={{ backgroundColor: '#e8e8f0' }}
           />
         </div>
+
+        <div className="history-panel">
+          <h3>История ходов</h3>
+          {moveHistory.length === 0 ? (
+            <p className="link-text">Ходов ещё не было</p>
+          ) : (
+            <div className="history-list">
+              {moveHistory.map((pair) => (
+                <div key={pair.num} className="history-row">
+                  <span className="move-num">{pair.num}.</span>
+                  <span className="move-white">{pair.white}</span>
+                  <span className="move-black">{pair.black}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
         <p>{status}</p>
       </div>
     </div>
