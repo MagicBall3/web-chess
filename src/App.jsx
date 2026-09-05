@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react'
+import React, { useEffect, useState, useCallback, useMemo } from 'react'
 import { Chess } from 'chess.js'
 import { Chessboard } from 'react-chessboard'
 import { db } from './firebaseConfig'
@@ -26,7 +26,7 @@ function formatTime(seconds) {
 }
 
 export default function App() {
-  const [view, setView] = useState('home') // home | create | join | game
+  const [view, setView] = useState('home')
   const [game, setGame] = useState(new Chess())
   const [roomId, setRoomId] = useState(null)
   const [color, setColor] = useState(null)
@@ -35,7 +35,7 @@ export default function App() {
   const [optionSquares, setOptionSquares] = useState({})
   const [joinInput, setJoinInput] = useState('')
   const [publicRooms, setPublicRooms] = useState([])
-  const [selectedTC, setSelectedTC] = useState(TIME_CONTROLS[3]) // 5 мин по умолчанию
+  const [selectedTC, setSelectedTC] = useState(TIME_CONTROLS[3])
   const [isPublic, setIsPublic] = useState(true)
   const [roomData, setRoomData] = useState(null)
   const [tick, setTick] = useState(Date.now())
@@ -55,20 +55,23 @@ export default function App() {
       const data = snapshot.val()
       if (data) {
         setRoomData(data)
-        if (data.fen) {
-          const newGame = new Chess()
-          newGame.load(data.fen)
-          setGame(newGame)
-          if (newGame.isGameOver()) {
-            setStatus('Игра окончена')
+        const newGame = new Chess()
+        if (data.pgn) {
+          try {
+            newGame.loadPgn(data.pgn)
+          } catch (e) {
+            // если PGN битый, откатываемся на стартовую позицию
           }
+        }
+        setGame(newGame)
+        if (newGame.isGameOver()) {
+          setStatus('Игра окончена')
         }
       }
     })
     return () => unsubscribe()
   }, [roomId])
 
-  // Тикающие часы (локальное отображение, раз в секунду)
   useEffect(() => {
     if (!roomData || !roomData.clock) return
     const interval = setInterval(() => setTick(Date.now()), 1000)
@@ -90,21 +93,23 @@ export default function App() {
 
   async function createRoom() {
     const id = generateRoomId()
-    const initialFen = new Chess().fen()
+    const createdAt = Date.now()
     const clock = selectedTC.initial
-      ? { whiteTime: selectedTC.initial, blackTime: selectedTC.initial, turn: 'w', turnStart: Date.now() }
+      ? { whiteTime: selectedTC.initial, blackTime: selectedTC.initial, turn: 'w', turnStart: createdAt }
       : null
 
     await set(ref(db, 'rooms/' + id), {
-      fen: initialFen,
+      fen: new Chess().fen(),
+      pgn: '',
       isPublic,
+      createdAt,
       timeControl: { initial: selectedTC.initial, increment: selectedTC.increment, label: selectedTC.label },
       clock,
     })
 
     if (isPublic) {
       await set(ref(db, 'publicRooms/' + id), {
-        createdAt: Date.now(),
+        createdAt,
         timeControlLabel: selectedTC.label,
       })
     }
@@ -122,7 +127,6 @@ export default function App() {
       setColor('b')
       setView('game')
       window.history.replaceState(null, '', '?room=' + id)
-      // Убираем комнату из публичного списка — место занято
       remove(ref(db, 'publicRooms/' + id))
     } else {
       setStatus('Комната не найдена')
@@ -176,9 +180,18 @@ export default function App() {
     }
   }
 
+  // Восстанавливаем полную партию из PGN, потом применяем новый ход —
+  // так локальная копия не теряет историю
   function tryMove(from, to) {
     if (game.turn() !== color) return false
-    const gameCopy = new Chess(game.fen())
+
+    const gameCopy = new Chess()
+    if (roomData && roomData.pgn) {
+      try {
+        gameCopy.loadPgn(roomData.pgn)
+      } catch (e) {}
+    }
+
     let move
     try {
       move = gameCopy.move({ from, to, promotion: 'q' })
@@ -189,18 +202,19 @@ export default function App() {
 
     setGame(gameCopy)
 
-    const update = { fen: gameCopy.fen() }
+    const update = { fen: gameCopy.fen(), pgn: gameCopy.pgn() }
 
     if (roomData && roomData.clock && roomData.timeControl && roomData.timeControl.initial) {
       const clock = roomData.clock
       const elapsed = (Date.now() - clock.turnStart) / 1000
-      const movingSide = clock.turn // 'w' или 'b' — тот, кто только что сходил
+      const movingSide = clock.turn
       const newClock = { ...clock }
-      const remaining = Math.max(0, (movingSide === 'w' ? clock.whiteTime : clock.blackTime) - elapsed + roomData.timeControl.increment)
-
+      const remaining = Math.max(
+        0,
+        (movingSide === 'w' ? clock.whiteTime : clock.blackTime) - elapsed + roomData.timeControl.increment
+      )
       if (movingSide === 'w') newClock.whiteTime = remaining
       else newClock.blackTime = remaining
-
       newClock.turn = movingSide === 'w' ? 'b' : 'w'
       newClock.turnStart = Date.now()
       update.clock = newClock
@@ -251,7 +265,6 @@ export default function App() {
 
   const turnText = game.turn() === color ? 'Твой ход' : 'Ход соперника'
 
-  // Вычисляем отображаемое время на часах
   let displayWhite = null
   let displayBlack = null
   if (roomData && roomData.clock) {
@@ -261,7 +274,46 @@ export default function App() {
     displayBlack = clock.turn === 'b' ? clock.blackTime - elapsed : clock.blackTime
   }
 
-  // ---------- ЭКРАН: ГЛАВНОЕ МЕНЮ ----------
+  function getResultTag() {
+    if (game.isCheckmate()) return game.turn() === 'w' ? '0-1' : '1-0'
+    if (game.isDraw()) return '1/2-1/2'
+    return '*'
+  }
+
+  function getTerminationTag() {
+    if (game.isCheckmate()) return 'Мат'
+    if (game.isStalemate()) return 'Пат'
+    if (game.isDraw()) return 'Ничья'
+    return 'Партия не окончена'
+  }
+
+  function copyPgn() {
+    const dateStr = new Date(roomData?.createdAt || Date.now())
+      .toISOString()
+      .slice(0, 10)
+      .replace(/-/g, '.')
+    const headers = [
+      `[Event "Web Chess"]`,
+      `[Site "web-chess"]`,
+      `[Date "${dateStr}"]`,
+      `[Round "1"]`,
+      `[White "Белые"]`,
+      `[Black "Чёрные"]`,
+      `[Result "${getResultTag()}"]`,
+      roomData?.timeControl?.label ? `[TimeControl "${roomData.timeControl.label}"]` : null,
+      `[Termination "${getTerminationTag()}"]`,
+    ].filter(Boolean).join('\n')
+
+    const movesText = game.pgn() || ''
+    const full = headers + '\n\n' + movesText + (movesText ? ` ${getResultTag()}` : '')
+
+    navigator.clipboard.writeText(full).then(() => {
+      setStatus('PGN скопирован в буфер обмена')
+    }).catch(() => {
+      setStatus('Не удалось скопировать PGN')
+    })
+  }
+
   if (view === 'home') {
     return (
       <div className="app-container">
@@ -275,13 +327,11 @@ export default function App() {
     )
   }
 
-  // ---------- ЭКРАН: СОЗДАНИЕ КОМНАТЫ ----------
   if (view === 'create') {
     return (
       <div className="app-container">
         <div className="card">
           <h1>Новая игра</h1>
-
           <h3>Контроль времени</h3>
           <div className="tc-grid">
             {TIME_CONTROLS.map((tc) => (
@@ -294,23 +344,15 @@ export default function App() {
               </button>
             ))}
           </div>
-
           <h3>Тип комнаты</h3>
           <div className="tc-grid">
-            <button
-              className={isPublic ? 'tc-btn active' : 'tc-btn'}
-              onClick={() => setIsPublic(true)}
-            >
+            <button className={isPublic ? 'tc-btn active' : 'tc-btn'} onClick={() => setIsPublic(true)}>
               Публичная
             </button>
-            <button
-              className={!isPublic ? 'tc-btn active' : 'tc-btn'}
-              onClick={() => setIsPublic(false)}
-            >
+            <button className={!isPublic ? 'tc-btn active' : 'tc-btn'} onClick={() => setIsPublic(false)}>
               Приватная
             </button>
           </div>
-
           <button onClick={createRoom}>Создать</button>
           <button className="secondary" onClick={() => setView('home')}>Назад</button>
         </div>
@@ -318,13 +360,11 @@ export default function App() {
     )
   }
 
-  // ---------- ЭКРАН: ВХОД В КОМНАТУ ----------
   if (view === 'join') {
     return (
       <div className="app-container">
         <div className="card">
           <h1>Войти в комнату</h1>
-
           <h3>Приватная комната</h3>
           <div className="join-block">
             <input
@@ -335,7 +375,6 @@ export default function App() {
             />
             <button onClick={handleJoinSubmit}>Подключиться</button>
           </div>
-
           <h3>Публичные комнаты</h3>
           {publicRooms.length === 0 ? (
             <p className="link-text">Сейчас нет открытых публичных комнат</p>
@@ -349,7 +388,6 @@ export default function App() {
               ))}
             </div>
           )}
-
           <button className="secondary" onClick={() => setView('home')}>Назад</button>
           <p>{status}</p>
         </div>
@@ -357,7 +395,6 @@ export default function App() {
     )
   }
 
-  // ---------- ЭКРАН: ИГРА ----------
   return (
     <div className="app-container">
       <div className="card board-card">
@@ -390,7 +427,10 @@ export default function App() {
         </div>
 
         <div className="history-panel">
-          <h3>История ходов</h3>
+          <div className="history-header">
+            <h3>История ходов</h3>
+            <button className="copy-btn" onClick={copyPgn}>Копировать PGN</button>
+          </div>
           {moveHistory.length === 0 ? (
             <p className="link-text">Ходов ещё не было</p>
           ) : (
