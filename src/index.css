@@ -134,3 +134,78 @@ button.secondary:hover {
   flex: 1;
   color: #c8c8e0;
 }
+
+.tc-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.tc-btn {
+  background: #1a1a2e;
+  border: 1px solid #3a3a5c;
+  color: #c8c8e0;
+  padding: 10px 6px;
+  border-radius: 8px;
+  font-size: 14px;
+  cursor: pointer;
+  margin: 0;
+}
+
+.tc-btn.active {
+  background: #6c5ce7;
+  border-color: #6c5ce7;
+  color: white;
+}
+
+h3 {
+  font-size: 14px;
+  color: #a0a0c0;
+  margin: 16px 0 4px;
+  text-align: left;
+}
+
+.public-list {
+  max-height: 200px;
+  overflow-y: auto;
+  background: #1a1a2e;
+  border-radius: 8px;
+  padding: 4px;
+}
+
+.public-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.public-row:hover {
+  background: #2a2a45;
+}
+
+.clocks {
+  display: flex;
+  justify-content: space-between;
+  margin: 12px 0;
+  gap: 8px;
+}
+
+.clock {
+  flex: 1;
+  background: #1a1a2e;
+  border-radius: 8px;
+  padding: 10px;
+  font-family: monospace;
+  font-size: 16px;
+  text-align: center;
+  border: 2px solid transparent;
+}
+
+.clock.active {
+  border-color: #6c5ce7;
+  color: white;
+}
