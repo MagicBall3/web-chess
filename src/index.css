@@ -209,3 +209,27 @@ h3 {
   border-color: #6c5ce7;
   color: white;
 }
+
+.history-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.history-header h3 {
+  margin: 0;
+}
+
+.copy-btn {
+  background: transparent;
+  border: 1px solid #6c5ce7;
+  color: #a99cff;
+  padding: 6px 10px;
+  font-size: 12px;
+  border-radius: 6px;
+  margin: 0;
+}
+
+.copy-btn:hover {
+  background: rgba(108, 92, 231, 0.15);
+}
