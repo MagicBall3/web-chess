@@ -1,9 +1,10 @@
-import React, { useEffect, useState, useCallback, useMemo } from 'react'
+import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { Chess } from 'chess.js'
 import { Chessboard } from 'react-chessboard'
 import { db } from './firebaseConfig'
 import { ref, onValue, set, get, remove } from 'firebase/database'
 import { evaluatePosition } from './stockfish'
+import { classifyMove, isPieceHanging, MOVE_ICONS } from './moveClassifier'
 
 const TIME_CONTROLS = [
   { key: 'unlimited', label: 'Без ограничения', initial: null, increment: 0 },
@@ -26,7 +27,6 @@ function formatTime(seconds) {
   return `${m}:${sec.toString().padStart(2, '0')}`
 }
 
-// Переводим оценку (в сантипешках, с точки зрения белых) в процент заполнения шкалы белым цветом
 function evalToWhitePercent(score) {
   if (!score) return 50
   if (score.type === 'mate') {
@@ -35,6 +35,18 @@ function evalToWhitePercent(score) {
   const cp = score.value
   const percent = 50 + 50 * (2 / (1 + Math.exp(-0.004 * cp)) - 1)
   return Math.max(3, Math.min(97, percent))
+}
+
+function iconBackgroundStyle(icon) {
+  if (!icon) return {}
+  const emoji = MOVE_ICONS[icon]
+  const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='40' height='40'><text x='37' y='15' font-size='16' text-anchor='end'>${emoji}</text></svg>`
+  const url = `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`
+  return {
+    backgroundImage: `url("${url}")`,
+    backgroundRepeat: 'no-repeat',
+    backgroundSize: 'contain',
+  }
 }
 
 export default function App() {
@@ -52,6 +64,9 @@ export default function App() {
   const [roomData, setRoomData] = useState(null)
   const [tick, setTick] = useState(Date.now())
   const [evalScore, setEvalScore] = useState(null)
+  const [analysisTick, setAnalysisTick] = useState(0)
+
+  const analysisRef = useRef({ evalHistory: [], annotations: [], running: false, roomId: null })
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
@@ -72,9 +87,7 @@ export default function App() {
         if (data.pgn) {
           try {
             newGame.loadPgn(data.pgn)
-          } catch (e) {
-            // если PGN битый, откатываемся на стартовую позицию
-          }
+          } catch (e) {}
         }
         setGame(newGame)
         if (newGame.isGameOver()) {
@@ -103,6 +116,69 @@ export default function App() {
       return () => unsubscribe()
     }
   }, [view])
+
+  // Сброс анализа при входе в новую комнату
+  useEffect(() => {
+    analysisRef.current = { evalHistory: [], annotations: [], running: false, roomId }
+    setAnalysisTick((t) => t + 1)
+  }, [roomId])
+
+  const verboseHistory = useMemo(() => game.history({ verbose: true }), [game])
+
+  function fenAtPly(ply) {
+    const g = new Chess()
+    for (let i = 0; i < ply; i++) {
+      const m = verboseHistory[i]
+      g.move({ from: m.from, to: m.to, promotion: m.promotion })
+    }
+    return g.fen()
+  }
+
+  async function runAnalysis() {
+    const state = analysisRef.current
+    if (state.running || state.roomId !== roomId) return
+    state.running = true
+
+    const totalPlies = verboseHistory.length
+
+    if (state.evalHistory.length === 0) {
+      const startResult = await evaluatePosition(new Chess().fen(), 12)
+      state.evalHistory.push(startResult)
+      setAnalysisTick((t) => t + 1)
+    }
+
+    while (state.evalHistory.length <= totalPlies && state.roomId === roomId) {
+      const ply = state.evalHistory.length
+      const fen = fenAtPly(ply)
+      const result = await evaluatePosition(fen, 12)
+      state.evalHistory.push(result)
+
+      const moveIndex = ply - 1
+      const move = verboseHistory[moveIndex]
+      const prevEntry = state.evalHistory[moveIndex]
+      const currEntry = state.evalHistory[ply]
+      const uciMove = move.from + move.to + (move.promotion || '')
+
+      const afterGame = new Chess(fen)
+      const hanging = isPieceHanging(afterGame, move.to)
+
+      const classification = classifyMove({
+        prevEntry,
+        currEntry,
+        uciMove,
+        piece: move.piece,
+        hanging,
+      })
+      state.annotations[moveIndex] = classification
+      setAnalysisTick((t) => t + 1)
+    }
+
+    state.running = false
+  }
+
+  useEffect(() => {
+    if (roomId) runAnalysis()
+  }, [verboseHistory.length, roomId])
 
   async function createRoom() {
     const id = generateRoomId()
@@ -193,8 +269,6 @@ export default function App() {
     }
   }
 
-  // Восстанавливаем полную партию из PGN, потом применяем новый ход —
-  // так локальная копия не теряет историю
   function tryMove(from, to) {
     if (game.turn() !== color) return false
 
@@ -248,6 +322,34 @@ export default function App() {
     getMoveOptions(sourceSquare)
   }
 
+  async function testEngine() {
+    setStatus('Считаю...')
+    const result = await evaluatePosition(game.fen(), 12)
+    if (result.score) {
+      const sideToMove = game.turn()
+      const normalized = sideToMove === 'w' ? result.score : { ...result.score, value: -result.score.value }
+      setEvalScore(normalized)
+
+      const scoreText = normalized.type === 'mate'
+        ? `Мат в ${Math.abs(normalized.value)}`
+        : `${(normalized.value / 100).toFixed(2)}`
+
+      let sanMove = result.bestMove
+      try {
+        const tempGame = new Chess(game.fen())
+        const from = result.bestMove.slice(0, 2)
+        const to = result.bestMove.slice(2, 4)
+        const promotion = result.bestMove.length > 4 ? result.bestMove.slice(4) : undefined
+        const moveResult = tempGame.move({ from, to, promotion })
+        if (moveResult) sanMove = moveResult.san
+      } catch (e) {}
+
+      setStatus(`Оценка: ${scoreText}, лучший ход: ${sanMove}`)
+    } else {
+      setStatus('Не удалось получить оценку')
+    }
+  }
+
   const checkSquareStyle = useMemo(() => {
     if (!game.inCheck()) return {}
     const kingColor = game.turn()
@@ -265,16 +367,39 @@ export default function App() {
     return {}
   }, [game])
 
-  const customSquareStyles = { ...optionSquares, ...checkSquareStyle }
+  // Иконка последнего хода поверх клетки
+  const lastMoveIconStyle = useMemo(() => {
+    const idx = verboseHistory.length - 1
+    if (idx < 0) return {}
+    const icon = analysisRef.current.annotations[idx]
+    if (!icon) return {}
+    const square = verboseHistory[idx].to
+    return { [square]: iconBackgroundStyle(icon) }
+  }, [verboseHistory, analysisTick])
+
+  const customSquareStyles = useMemo(() => {
+    const base = { ...optionSquares, ...checkSquareStyle }
+    Object.keys(lastMoveIconStyle).forEach((sq) => {
+      base[sq] = { ...(base[sq] || {}), ...lastMoveIconStyle[sq] }
+    })
+    return base
+  }, [optionSquares, checkSquareStyle, lastMoveIconStyle])
 
   const moveHistory = useMemo(() => {
     const hist = game.history()
+    const annotations = analysisRef.current.annotations
     const pairs = []
     for (let i = 0; i < hist.length; i += 2) {
-      pairs.push({ num: i / 2 + 1, white: hist[i], black: hist[i + 1] || '' })
+      pairs.push({
+        num: i / 2 + 1,
+        white: hist[i],
+        whiteIcon: annotations[i] ? MOVE_ICONS[annotations[i]] : '',
+        black: hist[i + 1] || '',
+        blackIcon: annotations[i + 1] ? MOVE_ICONS[annotations[i + 1]] : '',
+      })
     }
     return pairs
-  }, [game])
+  }, [game, analysisTick])
 
   const turnText = game.turn() === color ? 'Твой ход' : 'Ход соперника'
 
@@ -300,36 +425,6 @@ export default function App() {
     return 'Партия не окончена'
   }
 
-  async function testEngine() {
-    setStatus('Считаю...')
-    const result = await evaluatePosition(game.fen(), 12)
-    if (result.score) {
-      // UCI отдаёт оценку с точки зрения того, чей сейчас ход — приводим к оценке "за белых"
-      const sideToMove = game.turn()
-      const normalized = sideToMove === 'w' ? result.score : { ...result.score, value: -result.score.value }
-      setEvalScore(normalized)
-
-      const scoreText = normalized.type === 'mate'
-        ? `Мат в ${Math.abs(normalized.value)}`
-        : `${(normalized.value / 100).toFixed(2)}`
-
-      // Переводим лучший ход из формата "e7e5" в обычную шахматную запись (например "e5")
-      let sanMove = result.bestMove
-      try {
-        const tempGame = new Chess(game.fen())
-        const from = result.bestMove.slice(0, 2)
-        const to = result.bestMove.slice(2, 4)
-        const promotion = result.bestMove.length > 4 ? result.bestMove.slice(4) : undefined
-        const moveResult = tempGame.move({ from, to, promotion })
-        if (moveResult) sanMove = moveResult.san
-      } catch (e) {}
-
-      setStatus(`Оценка: ${scoreText}, лучший ход: ${sanMove}`)
-    } else {
-      setStatus('Не удалось получить оценку')
-    }
-  }
-  
   function copyPgn() {
     const dateStr = new Date(roomData?.createdAt || Date.now())
       .toISOString()
@@ -465,16 +560,16 @@ export default function App() {
             <div className="eval-bar-white" style={{ height: `${evalToWhitePercent(evalScore)}%` }} />
           </div>
           <div className="board-inner">
-          <Chessboard
-            position={game.fen()}
-            onPieceDrop={onDrop}
-            onSquareClick={onSquareClick}
-            onPieceDragBegin={onDragBegin}
-            boardOrientation={color === 'w' ? 'white' : 'black'}
-            customSquareStyles={customSquareStyles}
-            customDarkSquareStyle={{ backgroundColor: '#4a4a68' }}
-            customLightSquareStyle={{ backgroundColor: '#e8e8f0' }}
-          />
+            <Chessboard
+              position={game.fen()}
+              onPieceDrop={onDrop}
+              onSquareClick={onSquareClick}
+              onPieceDragBegin={onDragBegin}
+              boardOrientation={color === 'w' ? 'white' : 'black'}
+              customSquareStyles={customSquareStyles}
+              customDarkSquareStyle={{ backgroundColor: '#4a4a68' }}
+              customLightSquareStyle={{ backgroundColor: '#e8e8f0' }}
+            />
           </div>
         </div>
 
@@ -491,8 +586,8 @@ export default function App() {
               {moveHistory.map((pair) => (
                 <div key={pair.num} className="history-row">
                   <span className="move-num">{pair.num}.</span>
-                  <span className="move-white">{pair.white}</span>
-                  <span className="move-black">{pair.black}</span>
+                  <span className="move-white">{pair.white} {pair.whiteIcon}</span>
+                  <span className="move-black">{pair.black} {pair.blackIcon}</span>
                 </div>
               ))}
             </div>
