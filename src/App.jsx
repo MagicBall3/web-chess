@@ -40,6 +40,7 @@ export default function App() {
   const [isPublic, setIsPublic] = useState(true)
   const [roomData, setRoomData] = useState(null)
   const [tick, setTick] = useState(Date.now())
+  const [evalScore, setEvalScore] = useState(null)
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
@@ -292,10 +293,27 @@ export default function App() {
     setStatus('Считаю...')
     const result = await evaluatePosition(game.fen(), 12)
     if (result.score) {
-      const scoreText = result.score.type === 'mate'
-        ? `Мат в ${Math.abs(result.score.value)}`
-        : `${(result.score.value / 100).toFixed(2)}`
-      setStatus(`Оценка: ${scoreText}, лучший ход: ${result.bestMove}`)
+      // UCI отдаёт оценку с точки зрения того, чей сейчас ход — приводим к оценке "за белых"
+      const sideToMove = game.turn()
+      const normalized = sideToMove === 'w' ? result.score : { ...result.score, value: -result.score.value }
+      setEvalScore(normalized)
+
+      const scoreText = normalized.type === 'mate'
+        ? `Мат в ${Math.abs(normalized.value)}`
+        : `${(normalized.value / 100).toFixed(2)}`
+
+      // Переводим лучший ход из формата "e7e5" в обычную шахматную запись (например "e5")
+      let sanMove = result.bestMove
+      try {
+        const tempGame = new Chess(game.fen())
+        const from = result.bestMove.slice(0, 2)
+        const to = result.bestMove.slice(2, 4)
+        const promotion = result.bestMove.length > 4 ? result.bestMove.slice(4) : undefined
+        const moveResult = tempGame.move({ from, to, promotion })
+        if (moveResult) sanMove = moveResult.san
+      } catch (e) {}
+
+      setStatus(`Оценка: ${scoreText}, лучший ход: ${sanMove}`)
     } else {
       setStatus('Не удалось получить оценку')
     }
