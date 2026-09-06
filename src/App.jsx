@@ -582,6 +582,10 @@ export default function App() {
           <button onClick={() => setView('create')}>Создать комнату</button>
           <button className="secondary" onClick={() => setView('join')}>Войти в комнату</button>
 
+          {currentUser && (
+            <button className="secondary" onClick={() => setView('myGames')}>Мои партии</button>
+          )}
+
           {currentUser ? (
             <button className="secondary" onClick={handleLogout}>Выйти из аккаунта</button>
           ) : (
