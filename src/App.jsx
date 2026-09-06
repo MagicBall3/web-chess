@@ -80,6 +80,7 @@ export default function App() {
   const [isAdmin, setIsAdmin] = useState(false)
 
   const analysisRef = useRef({ evalHistory: [], annotations: [], running: false, roomId: null })
+  const savedGameRef = useRef(false)
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
