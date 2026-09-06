@@ -559,6 +559,53 @@ export default function App() {
     )
   }
 
+  if (view === 'auth') {
+    return (
+      <div className="app-container">
+        <div className="card">
+          <h1>{authMode === 'login' ? 'Вход' : 'Регистрация'}</h1>
+
+          <div className="tc-grid">
+            <button
+              className={authMode === 'login' ? 'tc-btn active' : 'tc-btn'}
+              onClick={() => setAuthMode('login')}
+            >
+              Вход
+            </button>
+            <button
+              className={authMode === 'register' ? 'tc-btn active' : 'tc-btn'}
+              onClick={() => setAuthMode('register')}
+            >
+              Регистрация
+            </button>
+          </div>
+
+          <div className="join-block" style={{ flexDirection: 'column' }}>
+            <input
+              type="email"
+              placeholder="Email"
+              value={authEmail}
+              onChange={(e) => setAuthEmail(e.target.value)}
+            />
+            <input
+              type="password"
+              placeholder="Пароль"
+              value={authPassword}
+              onChange={(e) => setAuthPassword(e.target.value)}
+            />
+          </div>
+
+          <button onClick={handleAuthSubmit}>
+            {authMode === 'login' ? 'Войти' : 'Зарегистрироваться'}
+          </button>
+          <button className="secondary" onClick={() => setView('home')}>Назад</button>
+
+          {authError && <p className="link-text">{authError}</p>}
+        </div>
+      </div>
+    )
+  }
+
   if (view === 'join') {
     return (
       <div className="app-container">
