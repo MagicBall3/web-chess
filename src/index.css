@@ -233,3 +233,33 @@ h3 {
 .copy-btn:hover {
   background: rgba(108, 92, 231, 0.15);
 }
+
+.board-wrapper {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.eval-bar {
+  width: 20px;
+  border-radius: 4px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid #3a3a5c;
+}
+
+.eval-bar-black {
+  background: #2a2a45;
+  transition: height 0.3s ease;
+}
+
+.eval-bar-white {
+  background: #e8e8f0;
+  transition: height 0.3s ease;
+}
+
+.board-inner {
+  flex: 1;
+  min-width: 0;
+}
