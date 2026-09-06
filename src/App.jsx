@@ -130,6 +130,13 @@ export default function App() {
           } catch (e) {}
         }
         setGame(newGame)
+
+        // Партия окончена — комната больше не нужна, чистим базу
+        // (локальный экран игрока при этом не меняется, он держится на своём React-состоянии)
+        if (newGame.isGameOver()) {
+          remove(ref(db, 'rooms/' + roomId))
+          remove(ref(db, 'publicRooms/' + roomId))
+        }
       }
     })
     return () => unsubscribe()
