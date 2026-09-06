@@ -62,6 +62,7 @@ export default function App() {
   const [publicRooms, setPublicRooms] = useState([])
   const [selectedTC, setSelectedTC] = useState(TIME_CONTROLS[3])
   const [isPublic, setIsPublic] = useState(true)
+  const [colorChoice, setColorChoice] = useState('random')
   const [roomData, setRoomData] = useState(null)
   const [tick, setTick] = useState(Date.now())
   const [analysisPly, setAnalysisPly] = useState(0)
@@ -87,7 +88,12 @@ export default function App() {
     const params = new URLSearchParams(window.location.search)
     const existingRoom = params.get('room')
     if (existingRoom) {
-      joinRoom(existingRoom)
+      const savedColor = localStorage.getItem('chess_color_' + existingRoom)
+      if (savedColor) {
+        rejoinRoom(existingRoom, savedColor)
+      } else {
+        joinRoom(existingRoom)
+      }
     }
   }, [])
 
@@ -130,6 +136,40 @@ export default function App() {
   }
 
   useEffect(() => {
+    if (view === 'myGames' && currentUser) {
+      get(ref(db, `users/${currentUser.uid}/games`)).then((snapshot) => {
+        const data = snapshot.val() || {}
+        const list = Object.entries(data).map(([id, val]) => ({ id, ...val }))
+        list.sort((a, b) => b.finishedAt - a.finishedAt)
+        setMyGames(list)
+      })
+    }
+  }, [view, currentUser])
+
+  function openSavedGame(gameRecord) {
+    const newGame = new Chess()
+    try {
+      newGame.loadPgn(gameRecord.pgn)
+    } catch (e) {}
+    setGame(newGame)
+    setRoomData({
+      createdAt: gameRecord.finishedAt,
+      timeControl: { label: gameRecord.timeControlLabel },
+    })
+    setColor(gameRecord.color || 'w')
+    setRoomId(null)
+    analysisRef.current = { evalHistory: [], annotations: [], running: false, roomId: null }
+    setAnalysisPly(newGame.history().length)
+    setView('analysis')
+  }
+
+  function formatGameDate(ts) {
+    if (!ts) return ''
+    const d = new Date(ts)
+    return d.toLocaleDateString('ru-RU') + ' ' + d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
+  }
+
+  useEffect(() => {
     if (!roomId) return
     const roomRef = ref(db, 'rooms/' + roomId)
     const unsubscribe = onValue(roomRef, (snapshot) => {
@@ -164,6 +204,7 @@ export default function App() {
 
           remove(ref(db, 'rooms/' + roomId))
           remove(ref(db, 'publicRooms/' + roomId))
+          localStorage.removeItem('chess_color_' + roomId)
         }
       }
     })
@@ -188,40 +229,6 @@ export default function App() {
       return () => unsubscribe()
     }
   }, [view])
-
-  useEffect(() => {
-    if (view === 'myGames' && currentUser) {
-      get(ref(db, `users/${currentUser.uid}/games`)).then((snapshot) => {
-        const data = snapshot.val() || {}
-        const list = Object.entries(data).map(([id, val]) => ({ id, ...val }))
-        list.sort((a, b) => b.finishedAt - a.finishedAt)
-        setMyGames(list)
-      })
-    }
-  }, [view, currentUser])
-
-  function openSavedGame(gameRecord) {
-    const newGame = new Chess()
-    try {
-      newGame.loadPgn(gameRecord.pgn)
-    } catch (e) {}
-    setGame(newGame)
-    setRoomData({
-      createdAt: gameRecord.finishedAt,
-      timeControl: { label: gameRecord.timeControlLabel },
-    })
-    setColor(gameRecord.color || 'w')
-    setRoomId(null)
-    analysisRef.current = { evalHistory: [], annotations: [], running: false, roomId: null }
-    setAnalysisPly(newGame.history().length)
-    setView('analysis')
-  }
-
-  function formatGameDate(ts) {
-    if (!ts) return ''
-    const d = new Date(ts)
-    return d.toLocaleDateString('ru-RU') + ' ' + d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
-  }
 
   useEffect(() => {
     analysisRef.current = { evalHistory: [], annotations: [], running: false, roomId }
@@ -305,11 +312,17 @@ export default function App() {
       ? { whiteTime: selectedTC.initial, blackTime: selectedTC.initial, turn: 'w', turnStart: createdAt }
       : null
 
+    let actualColor = colorChoice
+    if (colorChoice === 'random') {
+      actualColor = Math.random() < 0.5 ? 'w' : 'b'
+    }
+
     await set(ref(db, 'rooms/' + id), {
       fen: new Chess().fen(),
       pgn: '',
       isPublic,
       createdAt,
+      hostColor: actualColor,
       timeControl: { initial: selectedTC.initial, increment: selectedTC.increment, label: selectedTC.label },
       clock,
     })
@@ -321,8 +334,9 @@ export default function App() {
       })
     }
 
+    localStorage.setItem('chess_color_' + id, actualColor)
     setRoomId(id)
-    setColor('w')
+    setColor(actualColor)
     setView('game')
     window.history.replaceState(null, '', '?room=' + id)
   }
@@ -330,13 +344,28 @@ export default function App() {
   async function joinRoom(id) {
     const snapshot = await get(ref(db, 'rooms/' + id))
     if (snapshot.exists()) {
+      const data = snapshot.val()
+      const joinColor = data.hostColor === 'w' ? 'b' : (data.hostColor === 'b' ? 'w' : 'b')
+      localStorage.setItem('chess_color_' + id, joinColor)
       setRoomId(id)
-      setColor('b')
+      setColor(joinColor)
       setView('game')
       window.history.replaceState(null, '', '?room=' + id)
       remove(ref(db, 'publicRooms/' + id))
     } else {
       setStatus('Комната не найдена')
+    }
+  }
+
+  async function rejoinRoom(id, savedColor) {
+    const snapshot = await get(ref(db, 'rooms/' + id))
+    if (snapshot.exists()) {
+      setRoomId(id)
+      setColor(savedColor)
+      setView('game')
+    } else {
+      setStatus('Комната не найдена')
+      localStorage.removeItem('chess_color_' + id)
     }
   }
 
@@ -622,6 +651,18 @@ export default function App() {
             </button>
             <button className={!isPublic ? 'tc-btn active' : 'tc-btn'} onClick={() => setIsPublic(false)}>
               Приватная
+            </button>
+          </div>
+          <h3>Твой цвет</h3>
+          <div className="tc-grid">
+            <button className={colorChoice === 'w' ? 'tc-btn active' : 'tc-btn'} onClick={() => setColorChoice('w')}>
+              Белые
+            </button>
+            <button className={colorChoice === 'b' ? 'tc-btn active' : 'tc-btn'} onClick={() => setColorChoice('b')}>
+              Чёрные
+            </button>
+            <button className={colorChoice === 'random' ? 'tc-btn active' : 'tc-btn'} onClick={() => setColorChoice('random')}>
+              Случайно
             </button>
           </div>
           <button onClick={createRoom}>Создать</button>
