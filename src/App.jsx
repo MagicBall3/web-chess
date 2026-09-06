@@ -71,6 +71,12 @@ export default function App() {
   const [analysisTick, setAnalysisTick] = useState(0)
   const [analysisBestMove, setAnalysisBestMove] = useState(null)
   const [showBestMoveArrow, setShowBestMoveArrow] = useState(true)
+  const [currentUser, setCurrentUser] = useState(null)
+  const [authChecked, setAuthChecked] = useState(false)
+  const [authMode, setAuthMode] = useState('login')
+  const [authEmail, setAuthEmail] = useState('')
+  const [authPassword, setAuthPassword] = useState('')
+  const [authError, setAuthError] = useState('')
 
   const analysisRef = useRef({ evalHistory: [], annotations: [], running: false, roomId: null })
 
