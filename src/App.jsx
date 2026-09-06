@@ -190,6 +190,40 @@ export default function App() {
   }, [view])
 
   useEffect(() => {
+    if (view === 'myGames' && currentUser) {
+      get(ref(db, `users/${currentUser.uid}/games`)).then((snapshot) => {
+        const data = snapshot.val() || {}
+        const list = Object.entries(data).map(([id, val]) => ({ id, ...val }))
+        list.sort((a, b) => b.finishedAt - a.finishedAt)
+        setMyGames(list)
+      })
+    }
+  }, [view, currentUser])
+
+  function openSavedGame(gameRecord) {
+    const newGame = new Chess()
+    try {
+      newGame.loadPgn(gameRecord.pgn)
+    } catch (e) {}
+    setGame(newGame)
+    setRoomData({
+      createdAt: gameRecord.finishedAt,
+      timeControl: { label: gameRecord.timeControlLabel },
+    })
+    setColor(gameRecord.color || 'w')
+    setRoomId(null)
+    analysisRef.current = { evalHistory: [], annotations: [], running: false, roomId: null }
+    setAnalysisPly(newGame.history().length)
+    setView('analysis')
+  }
+
+  function formatGameDate(ts) {
+    if (!ts) return ''
+    const d = new Date(ts)
+    return d.toLocaleDateString('ru-RU') + ' ' + d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
+  }
+
+  useEffect(() => {
     analysisRef.current = { evalHistory: [], annotations: [], running: false, roomId }
     savedGameRef.current = false
   }, [roomId])
