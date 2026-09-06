@@ -125,9 +125,49 @@ export default function App() {
   }
 
   async function handleLogout() {
-  async function handleLogout() {
     await logoutUser()
   }
+
+  useEffect(() => {
+    if (!roomId) return
+    const roomRef = ref(db, 'rooms/' + roomId)
+    const unsubscribe = onValue(roomRef, (snapshot) => {
+      const data = snapshot.val()
+      if (data) {
+        setRoomData(data)
+        const newGame = new Chess()
+        if (data.pgn) {
+          try {
+            newGame.loadPgn(data.pgn)
+          } catch (e) {}
+        }
+        setGame(newGame)
+
+        if (newGame.isGameOver() && !savedGameRef.current) {
+          savedGameRef.current = true
+
+          if (currentUser) {
+            const gameKey = Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
+            const resultTag = newGame.isCheckmate()
+              ? (newGame.turn() === 'w' ? '0-1' : '1-0')
+              : (newGame.isDraw() ? '1/2-1/2' : '*')
+
+            set(ref(db, `users/${currentUser.uid}/games/${gameKey}`), {
+              pgn: data.pgn || '',
+              result: resultTag,
+              color,
+              timeControlLabel: data.timeControl?.label || '',
+              finishedAt: Date.now(),
+            })
+          }
+
+          remove(ref(db, 'rooms/' + roomId))
+          remove(ref(db, 'publicRooms/' + roomId))
+        }
+      }
+    })
+    return () => unsubscribe()
+  }, [roomId, currentUser])
 
   useEffect(() => {
     if (!roomData || !roomData.clock) return
@@ -169,7 +209,6 @@ export default function App() {
     setAnalysisPly(clamped)
   }
 
-  // Оценка позиции при перемотке — сразу, без значков
   useEffect(() => {
     if (view !== 'analysis') return
     let cancelled = false
@@ -189,7 +228,6 @@ export default function App() {
     return () => { cancelled = true }
   }, [analysisPly, view])
 
-  // Полный разбор партии по кнопке — считает значки для всех ходов
   async function runFullAnalysis() {
     if (analyzing) return
     setAnalyzing(true)
@@ -361,10 +399,10 @@ export default function App() {
       const clock = roomData.clock
       const movingSide = clock.turn
       const newClock = { ...clock }
-      const isFreeMove = verboseHistory.length < 2 // первые ходы белых и чёрных — без учёта времени
+      const isFreeMove = verboseHistory.length < 2
 
       if (isFreeMove) {
-        // Время не тратим, просто передаём ход дальше
+        // Время не тратим
       } else {
         const elapsed = (Date.now() - clock.turnStart) / 1000
         const remaining = Math.max(
@@ -636,7 +674,6 @@ export default function App() {
     )
   }
 
-  // ---------- РЕЖИМ АНАЛИЗА ----------
   if (view === 'analysis') {
     const displayFen = fenAtPly(analysisPly)
     const lastMove = analysisPly > 0 ? verboseHistory[analysisPly - 1] : null
@@ -737,7 +774,6 @@ export default function App() {
     )
   }
 
-  // ---------- ЭКРАН: ИГРА ----------
   return (
     <div className="app-container">
       <div className="card board-card">
