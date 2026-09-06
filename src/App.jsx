@@ -328,15 +328,22 @@ export default function App() {
 
     if (roomData && roomData.clock && roomData.timeControl && roomData.timeControl.initial) {
       const clock = roomData.clock
-      const elapsed = (Date.now() - clock.turnStart) / 1000
       const movingSide = clock.turn
       const newClock = { ...clock }
-      const remaining = Math.max(
-        0,
-        (movingSide === 'w' ? clock.whiteTime : clock.blackTime) - elapsed + roomData.timeControl.increment
-      )
-      if (movingSide === 'w') newClock.whiteTime = remaining
-      else newClock.blackTime = remaining
+      const isFreeMove = verboseHistory.length < 2 // первые ходы белых и чёрных — без учёта времени
+
+      if (isFreeMove) {
+        // Время не тратим, просто передаём ход дальше
+      } else {
+        const elapsed = (Date.now() - clock.turnStart) / 1000
+        const remaining = Math.max(
+          0,
+          (movingSide === 'w' ? clock.whiteTime : clock.blackTime) - elapsed + roomData.timeControl.increment
+        )
+        if (movingSide === 'w') newClock.whiteTime = remaining
+        else newClock.blackTime = remaining
+      }
+
       newClock.turn = movingSide === 'w' ? 'b' : 'w'
       newClock.turnStart = Date.now()
       update.clock = newClock
