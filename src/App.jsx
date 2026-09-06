@@ -153,6 +153,7 @@ export default function App() {
         ? (sideToMove === 'w' ? result.score : { ...result.score, value: -result.score.value })
         : null
       setAnalysisEval(normalized)
+      setAnalysisBestMove(result.bestMove || null)
     }
     run()
     return () => { cancelled = true }
