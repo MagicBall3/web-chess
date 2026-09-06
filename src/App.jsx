@@ -77,6 +77,7 @@ export default function App() {
   const [authEmail, setAuthEmail] = useState('')
   const [authPassword, setAuthPassword] = useState('')
   const [authError, setAuthError] = useState('')
+  const [isAdmin, setIsAdmin] = useState(false)
 
   const analysisRef = useRef({ evalHistory: [], annotations: [], running: false, roomId: null })
 
