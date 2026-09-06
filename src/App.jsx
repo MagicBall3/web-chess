@@ -553,6 +553,9 @@ export default function App() {
     const analysisSquareStyles = lastMove && lastMoveIcon
       ? { [lastMove.to]: iconBackgroundStyle(lastMoveIcon) }
       : {}
+    const bestMoveArrow = showBestMoveArrow && analysisBestMove
+      ? [[analysisBestMove.slice(0, 2), analysisBestMove.slice(2, 4), '#1ea64c']]
+      : []
 
     const pairs = []
     for (let i = 0; i < verboseHistory.length; i += 2) {
