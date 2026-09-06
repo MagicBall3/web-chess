@@ -3,7 +3,7 @@ let readyPromise = null
 
 function getWorker() {
   if (!worker) {
-    worker = new Worker('/stockfish/stockfish-18-lite-single.js')
+    worker = new Worker('/stockfish/stockfish-nnue-16-single.js')
   }
   return worker
 }
