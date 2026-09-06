@@ -3,6 +3,7 @@ import { Chess } from 'chess.js'
 import { Chessboard } from 'react-chessboard'
 import { db } from './firebaseConfig'
 import { ref, onValue, set, get, remove } from 'firebase/database'
+import { evaluatePosition } from './stockfish'
 
 const TIME_CONTROLS = [
   { key: 'unlimited', label: 'Без ограничения', initial: null, increment: 0 },
@@ -287,6 +288,19 @@ export default function App() {
     return 'Партия не окончена'
   }
 
+  async function testEngine() {
+    setStatus('Считаю...')
+    const result = await evaluatePosition(game.fen(), 12)
+    if (result.score) {
+      const scoreText = result.score.type === 'mate'
+        ? `Мат в ${Math.abs(result.score.value)}`
+        : `${(result.score.value / 100).toFixed(2)}`
+      setStatus(`Оценка: ${scoreText}, лучший ход: ${result.bestMove}`)
+    } else {
+      setStatus('Не удалось получить оценку')
+    }
+  }
+  
   function copyPgn() {
     const dateStr = new Date(roomData?.createdAt || Date.now())
       .toISOString()
@@ -433,6 +447,7 @@ export default function App() {
           <div className="history-header">
             <h3>История ходов</h3>
             <button className="copy-btn" onClick={copyPgn}>Копировать PGN</button>
+            <button className="copy-btn" onClick={testEngine}>Проверить движок</button>
           </div>
           {moveHistory.length === 0 ? (
             <p className="link-text">Ходов ещё не было</p>
