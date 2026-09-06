@@ -78,6 +78,7 @@ export default function App() {
   const [authPassword, setAuthPassword] = useState('')
   const [authError, setAuthError] = useState('')
   const [isAdmin, setIsAdmin] = useState(false)
+  const [myGames, setMyGames] = useState([])
 
   const analysisRef = useRef({ evalHistory: [], annotations: [], running: false, roomId: null })
   const savedGameRef = useRef(false)
