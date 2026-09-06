@@ -125,27 +125,9 @@ export default function App() {
   }
 
   async function handleLogout() {
+  async function handleLogout() {
     await logoutUser()
   }
-
-  useEffect(() => {
-  useEffect(() => {
-    const unsubscribe = subscribeToAuth((user) => {
-      setCurrentUser(user)
-      setAuthChecked(true)
-    })
-    return () => unsubscribe()
-  }, [])
-
-  useEffect(() => {
-    if (!currentUser) {
-      setIsAdmin(false)
-      return
-    }
-    get(ref(db, 'admins/' + currentUser.uid)).then((snapshot) => {
-      setIsAdmin(snapshot.exists())
-    })
-  }, [currentUser])
 
   useEffect(() => {
     if (!roomData || !roomData.clock) return
