@@ -504,8 +504,22 @@ export default function App() {
       <div className="app-container">
         <div className="card">
           <h1>Web Chess</h1>
+
+          {currentUser ? (
+            <p className="link-text">Вошёл как: {currentUser.email}</p>
+          ) : (
+            <p className="link-text">Гость (не вошёл в аккаунт)</p>
+          )}
+
           <button onClick={() => setView('create')}>Создать комнату</button>
           <button className="secondary" onClick={() => setView('join')}>Войти в комнату</button>
+
+          {currentUser ? (
+            <button className="secondary" onClick={handleLogout}>Выйти из аккаунта</button>
+          ) : (
+            <button className="secondary" onClick={() => setView('auth')}>Войти / Регистрация</button>
+          )}
+
           <p>{status}</p>
         </div>
       </div>
