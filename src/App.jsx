@@ -5,6 +5,7 @@ import { db } from './firebaseConfig'
 import { ref, onValue, set, get, remove } from 'firebase/database'
 import { evaluatePosition } from './stockfish'
 import { classifyMove, isPieceHanging, MOVE_ICONS } from './moveClassifier'
+import { subscribeToAuth, loginUser, registerUser, logoutUser } from './auth'
 
 const TIME_CONTROLS = [
   { key: 'unlimited', label: 'Без ограничения', initial: null, increment: 0 },
