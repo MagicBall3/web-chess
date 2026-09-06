@@ -97,6 +97,16 @@ export default function App() {
     return () => unsubscribe()
   }, [])
 
+  useEffect(() => {
+    if (!currentUser) {
+      setIsAdmin(false)
+      return
+    }
+    get(ref(db, 'admins/' + currentUser.uid)).then((snapshot) => {
+      setIsAdmin(snapshot.exists())
+    })
+  }, [currentUser])
+
   async function handleAuthSubmit() {
     setAuthError('')
     try {
