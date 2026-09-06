@@ -26,6 +26,17 @@ function formatTime(seconds) {
   return `${m}:${sec.toString().padStart(2, '0')}`
 }
 
+// Переводим оценку (в сантипешках, с точки зрения белых) в процент заполнения шкалы белым цветом
+function evalToWhitePercent(score) {
+  if (!score) return 50
+  if (score.type === 'mate') {
+    return score.value > 0 ? 100 : 0
+  }
+  const cp = score.value
+  const percent = 50 + 50 * (2 / (1 + Math.exp(-0.004 * cp)) - 1)
+  return Math.max(3, Math.min(97, percent))
+}
+
 export default function App() {
   const [view, setView] = useState('home')
   const [game, setGame] = useState(new Chess())
