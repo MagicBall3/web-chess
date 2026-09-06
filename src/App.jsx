@@ -63,6 +63,11 @@ export default function App() {
   const [isPublic, setIsPublic] = useState(true)
   const [roomData, setRoomData] = useState(null)
   const [tick, setTick] = useState(Date.now())
+  const [analysisPly, setAnalysisPly] = useState(0)
+  const [analysisEval, setAnalysisEval] = useState(null)
+  const [analyzing, setAnalyzing] = useState(false)
+  const [analysisProgress, setAnalysisProgress] = useState(0)
+  const [analysisTick, setAnalysisTick] = useState(0)
 
   const analysisRef = useRef({ evalHistory: [], annotations: [], running: false, roomId: null })
 
