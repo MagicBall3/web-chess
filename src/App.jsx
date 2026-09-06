@@ -399,9 +399,15 @@ export default function App() {
   let displayBlack = null
   if (roomData && roomData.clock) {
     const clock = roomData.clock
-    const elapsed = (tick - clock.turnStart) / 1000
-    displayWhite = clock.turn === 'w' ? clock.whiteTime - elapsed : clock.whiteTime
-    displayBlack = clock.turn === 'b' ? clock.blackTime - elapsed : clock.blackTime
+    const clockRunning = verboseHistory.length >= 2
+    if (clockRunning) {
+      const elapsed = (tick - clock.turnStart) / 1000
+      displayWhite = clock.turn === 'w' ? clock.whiteTime - elapsed : clock.whiteTime
+      displayBlack = clock.turn === 'b' ? clock.blackTime - elapsed : clock.blackTime
+    } else {
+      displayWhite = clock.whiteTime
+      displayBlack = clock.blackTime
+    }
   }
 
   function getResultTag() {
