@@ -304,7 +304,10 @@ export default function App() {
       `[Termination "${getTerminationTag()}"]`,
     ].filter(Boolean).join('\n')
 
-    const movesText = game.pgn() || ''
+    const movesText = moveHistory
+      .map((pair) => `${pair.num}. ${pair.white}${pair.black ? ' ' + pair.black : ''}`)
+      .join(' ')
+
     const full = headers + '\n\n' + movesText + (movesText ? ` ${getResultTag()}` : '')
 
     navigator.clipboard.writeText(full).then(() => {
