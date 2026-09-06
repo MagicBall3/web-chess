@@ -678,6 +678,29 @@ export default function App() {
     )
   }
 
+  if (view === 'myGames') {
+    return (
+      <div className="app-container">
+        <div className="card">
+          <h1>Мои партии</h1>
+          {myGames.length === 0 ? (
+            <p className="link-text">Пока нет сохранённых партий</p>
+          ) : (
+            <div className="public-list">
+              {myGames.map((g) => (
+                <div key={g.id} className="public-row" onClick={() => openSavedGame(g)}>
+                  <span>{formatGameDate(g.finishedAt)}</span>
+                  <span className="link-text">{g.result} {g.timeControlLabel}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          <button className="secondary" onClick={() => setView('home')}>Назад</button>
+        </div>
+      </div>
+    )
+  }
+
   if (view === 'join') {
     return (
       <div className="app-container">
