@@ -89,6 +89,34 @@ export default function App() {
   }, [])
 
   useEffect(() => {
+    const unsubscribe = subscribeToAuth((user) => {
+      setCurrentUser(user)
+      setAuthChecked(true)
+    })
+    return () => unsubscribe()
+  }, [])
+
+  async function handleAuthSubmit() {
+    setAuthError('')
+    try {
+      if (authMode === 'login') {
+        await loginUser(authEmail, authPassword)
+      } else {
+        await registerUser(authEmail, authPassword)
+      }
+      setView('home')
+      setAuthEmail('')
+      setAuthPassword('')
+    } catch (e) {
+      setAuthError(e.message)
+    }
+  }
+
+  async function handleLogout() {
+    await logoutUser()
+  }
+
+  useEffect(() => {
     if (!roomId) return
     const roomRef = ref(db, 'rooms/' + roomId)
     const unsubscribe = onValue(roomRef, (snapshot) => {
