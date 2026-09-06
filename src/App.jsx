@@ -460,6 +460,11 @@ export default function App() {
         )}
 
         <div className="board-wrapper">
+          <div className="eval-bar">
+            <div className="eval-bar-black" style={{ height: `${100 - evalToWhitePercent(evalScore)}%` }} />
+            <div className="eval-bar-white" style={{ height: `${evalToWhitePercent(evalScore)}%` }} />
+          </div>
+          <div className="board-inner">
           <Chessboard
             position={game.fen()}
             onPieceDrop={onDrop}
@@ -470,6 +475,7 @@ export default function App() {
             customDarkSquareStyle={{ backgroundColor: '#4a4a68' }}
             customLightSquareStyle={{ backgroundColor: '#e8e8f0' }}
           />
+          </div>
         </div>
 
         <div className="history-panel">
