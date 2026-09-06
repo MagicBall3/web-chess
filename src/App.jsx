@@ -129,30 +129,23 @@ export default function App() {
   }
 
   useEffect(() => {
-    if (!roomId) return
-    const roomRef = ref(db, 'rooms/' + roomId)
-    const unsubscribe = onValue(roomRef, (snapshot) => {
-      const data = snapshot.val()
-      if (data) {
-        setRoomData(data)
-        const newGame = new Chess()
-        if (data.pgn) {
-          try {
-            newGame.loadPgn(data.pgn)
-          } catch (e) {}
-        }
-        setGame(newGame)
-
-        // Партия окончена — комната больше не нужна, чистим базу
-        // (локальный экран игрока при этом не меняется, он держится на своём React-состоянии)
-        if (newGame.isGameOver()) {
-          remove(ref(db, 'rooms/' + roomId))
-          remove(ref(db, 'publicRooms/' + roomId))
-        }
-      }
+  useEffect(() => {
+    const unsubscribe = subscribeToAuth((user) => {
+      setCurrentUser(user)
+      setAuthChecked(true)
     })
     return () => unsubscribe()
-  }, [roomId])
+  }, [])
+
+  useEffect(() => {
+    if (!currentUser) {
+      setIsAdmin(false)
+      return
+    }
+    get(ref(db, 'admins/' + currentUser.uid)).then((snapshot) => {
+      setIsAdmin(snapshot.exists())
+    })
+  }, [currentUser])
 
   useEffect(() => {
     if (!roomData || !roomData.clock) return
