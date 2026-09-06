@@ -175,6 +175,7 @@ export default function App() {
 
   useEffect(() => {
     analysisRef.current = { evalHistory: [], annotations: [], running: false, roomId }
+    savedGameRef.current = false
   }, [roomId])
 
   const verboseHistory = useMemo(() => game.history({ verbose: true }), [game])
