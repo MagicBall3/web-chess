@@ -602,6 +602,15 @@ export default function App() {
             <button className="tc-btn" onClick={() => goToPly(verboseHistory.length)}>▶|</button>
           </div>
 
+          <div className="nav-controls">
+            <button
+              className={showBestMoveArrow ? 'tc-btn active' : 'tc-btn'}
+              onClick={() => setShowBestMoveArrow((v) => !v)}
+            >
+              Стрелка лучшего хода: {showBestMoveArrow ? 'вкл' : 'выкл'}
+            </button>
+          </div>
+
           <button onClick={runFullAnalysis} disabled={analyzing}>
             {analyzing ? `Анализирую... ${analysisProgress}/${verboseHistory.length + 1}` : 'Показать оценки ходов'}
           </button>
