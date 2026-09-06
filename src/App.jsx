@@ -588,6 +588,7 @@ export default function App() {
                 boardOrientation={color === 'w' ? 'white' : 'black'}
                 arePiecesDraggable={false}
                 customSquareStyles={analysisSquareStyles}
+                customArrows={bestMoveArrow}
                 customDarkSquareStyle={{ backgroundColor: '#4a4a68' }}
                 customLightSquareStyle={{ backgroundColor: '#e8e8f0' }}
               />
