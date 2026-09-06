@@ -63,8 +63,6 @@ export default function App() {
   const [isPublic, setIsPublic] = useState(true)
   const [roomData, setRoomData] = useState(null)
   const [tick, setTick] = useState(Date.now())
-  const [evalScore, setEvalScore] = useState(null)
-  const [analysisTick, setAnalysisTick] = useState(0)
 
   const analysisRef = useRef({ evalHistory: [], annotations: [], running: false, roomId: null })
 
@@ -90,9 +88,6 @@ export default function App() {
           } catch (e) {}
         }
         setGame(newGame)
-        if (newGame.isGameOver()) {
-          setStatus('Игра окончена')
-        }
       }
     })
     return () => unsubscribe()
@@ -117,10 +112,8 @@ export default function App() {
     }
   }, [view])
 
-  // Сброс анализа при входе в новую комнату
   useEffect(() => {
     analysisRef.current = { evalHistory: [], annotations: [], running: false, roomId }
-    setAnalysisTick((t) => t + 1)
   }, [roomId])
 
   const verboseHistory = useMemo(() => game.history({ verbose: true }), [game])
@@ -133,52 +126,6 @@ export default function App() {
     }
     return g.fen()
   }
-
-  async function runAnalysis() {
-    const state = analysisRef.current
-    if (state.running || state.roomId !== roomId) return
-    state.running = true
-
-    const totalPlies = verboseHistory.length
-
-    if (state.evalHistory.length === 0) {
-      const startResult = await evaluatePosition(new Chess().fen(), 12)
-      state.evalHistory.push(startResult)
-      setAnalysisTick((t) => t + 1)
-    }
-
-    while (state.evalHistory.length <= totalPlies && state.roomId === roomId) {
-      const ply = state.evalHistory.length
-      const fen = fenAtPly(ply)
-      const result = await evaluatePosition(fen, 12)
-      state.evalHistory.push(result)
-
-      const moveIndex = ply - 1
-      const move = verboseHistory[moveIndex]
-      const prevEntry = state.evalHistory[moveIndex]
-      const currEntry = state.evalHistory[ply]
-      const uciMove = move.from + move.to + (move.promotion || '')
-
-      const afterGame = new Chess(fen)
-      const hanging = isPieceHanging(afterGame, move.to)
-
-      const classification = classifyMove({
-        prevEntry,
-        currEntry,
-        uciMove,
-        piece: move.piece,
-        hanging,
-      })
-      state.annotations[moveIndex] = classification
-      setAnalysisTick((t) => t + 1)
-    }
-
-    state.running = false
-  }
-
-  useEffect(() => {
-    if (roomId) runAnalysis()
-  }, [verboseHistory.length, roomId])
 
   async function createRoom() {
     const id = generateRoomId()
@@ -227,6 +174,20 @@ export default function App() {
     if (trimmed) joinRoom(trimmed)
   }
 
+  function handleExit() {
+    setRoomId(null)
+    setRoomData(null)
+    setView('home')
+    window.history.replaceState(null, '', window.location.pathname)
+  }
+
+  function handleNewGame() {
+    setRoomId(null)
+    setRoomData(null)
+    setView('create')
+    window.history.replaceState(null, '', window.location.pathname)
+  }
+
   function getMoveOptions(square) {
     const moves = game.moves({ square, verbose: true })
     if (moves.length === 0) {
@@ -249,6 +210,7 @@ export default function App() {
   }
 
   function onSquareClick(square) {
+    if (game.isGameOver()) return
     if (!moveFrom) {
       const piece = game.get(square)
       if (piece && piece.color === color) {
@@ -270,6 +232,7 @@ export default function App() {
   }
 
   function tryMove(from, to) {
+    if (game.isGameOver()) return false
     if (game.turn() !== color) return false
 
     const gameCopy = new Chess()
@@ -319,35 +282,8 @@ export default function App() {
   }, [game, color, roomId, roomData])
 
   function onDragBegin(piece, sourceSquare) {
+    if (game.isGameOver()) return
     getMoveOptions(sourceSquare)
-  }
-
-  async function testEngine() {
-    setStatus('Считаю...')
-    const result = await evaluatePosition(game.fen(), 12)
-    if (result.score) {
-      const sideToMove = game.turn()
-      const normalized = sideToMove === 'w' ? result.score : { ...result.score, value: -result.score.value }
-      setEvalScore(normalized)
-
-      const scoreText = normalized.type === 'mate'
-        ? `Мат в ${Math.abs(normalized.value)}`
-        : `${(normalized.value / 100).toFixed(2)}`
-
-      let sanMove = result.bestMove
-      try {
-        const tempGame = new Chess(game.fen())
-        const from = result.bestMove.slice(0, 2)
-        const to = result.bestMove.slice(2, 4)
-        const promotion = result.bestMove.length > 4 ? result.bestMove.slice(4) : undefined
-        const moveResult = tempGame.move({ from, to, promotion })
-        if (moveResult) sanMove = moveResult.san
-      } catch (e) {}
-
-      setStatus(`Оценка: ${scoreText}, лучший ход: ${sanMove}`)
-    } else {
-      setStatus('Не удалось получить оценку')
-    }
   }
 
   const checkSquareStyle = useMemo(() => {
@@ -367,39 +303,16 @@ export default function App() {
     return {}
   }, [game])
 
-  // Иконка последнего хода поверх клетки
-  const lastMoveIconStyle = useMemo(() => {
-    const idx = verboseHistory.length - 1
-    if (idx < 0) return {}
-    const icon = analysisRef.current.annotations[idx]
-    if (!icon) return {}
-    const square = verboseHistory[idx].to
-    return { [square]: iconBackgroundStyle(icon) }
-  }, [verboseHistory, analysisTick])
-
-  const customSquareStyles = useMemo(() => {
-    const base = { ...optionSquares, ...checkSquareStyle }
-    Object.keys(lastMoveIconStyle).forEach((sq) => {
-      base[sq] = { ...(base[sq] || {}), ...lastMoveIconStyle[sq] }
-    })
-    return base
-  }, [optionSquares, checkSquareStyle, lastMoveIconStyle])
+  const customSquareStyles = { ...optionSquares, ...checkSquareStyle }
 
   const moveHistory = useMemo(() => {
     const hist = game.history()
-    const annotations = analysisRef.current.annotations
     const pairs = []
     for (let i = 0; i < hist.length; i += 2) {
-      pairs.push({
-        num: i / 2 + 1,
-        white: hist[i],
-        whiteIcon: annotations[i] ? MOVE_ICONS[annotations[i]] : '',
-        black: hist[i + 1] || '',
-        blackIcon: annotations[i + 1] ? MOVE_ICONS[annotations[i + 1]] : '',
-      })
+      pairs.push({ num: i / 2 + 1, white: hist[i], black: hist[i + 1] || '' })
     }
     return pairs
-  }, [game, analysisTick])
+  }, [game])
 
   const turnText = game.turn() === color ? 'Твой ход' : 'Ход соперника'
 
@@ -423,6 +336,16 @@ export default function App() {
     if (game.isStalemate()) return 'Пат'
     if (game.isDraw()) return 'Ничья'
     return 'Партия не окончена'
+  }
+
+  function getGameOverMessage() {
+    if (game.isCheckmate()) {
+      const winner = game.turn() === 'w' ? 'Чёрные' : 'Белые'
+      return `Мат! Победили: ${winner}`
+    }
+    if (game.isStalemate()) return 'Пат — ничья'
+    if (game.isDraw()) return 'Ничья'
+    return 'Игра окончена'
   }
 
   function copyPgn() {
@@ -536,6 +459,28 @@ export default function App() {
     )
   }
 
+  // ---------- РЕЖИМ АНАЛИЗА (заглушка, доработаем следующим шагом) ----------
+  if (view === 'analysis') {
+    return (
+      <div className="app-container">
+        <div className="card board-card">
+          <h2>Анализ партии</h2>
+          <div className="board-wrapper">
+            <div className="board-inner">
+              <Chessboard
+                position={game.fen()}
+                boardOrientation={color === 'w' ? 'white' : 'black'}
+                arePiecesDraggable={false}
+              />
+            </div>
+          </div>
+          <button className="secondary" onClick={handleExit}>Выйти в меню</button>
+        </div>
+      </div>
+    )
+  }
+
+  // ---------- ЭКРАН: ИГРА ----------
   return (
     <div className="app-container">
       <div className="card board-card">
@@ -555,10 +500,6 @@ export default function App() {
         )}
 
         <div className="board-wrapper">
-          <div className="eval-bar">
-            <div className="eval-bar-black" style={{ height: `${100 - evalToWhitePercent(evalScore)}%` }} />
-            <div className="eval-bar-white" style={{ height: `${evalToWhitePercent(evalScore)}%` }} />
-          </div>
           <div className="board-inner">
             <Chessboard
               position={game.fen()}
@@ -577,7 +518,6 @@ export default function App() {
           <div className="history-header">
             <h3>История ходов</h3>
             <button className="copy-btn" onClick={copyPgn}>Копировать PGN</button>
-            <button className="copy-btn" onClick={testEngine}>Проверить движок</button>
           </div>
           {moveHistory.length === 0 ? (
             <p className="link-text">Ходов ещё не было</p>
@@ -586,8 +526,8 @@ export default function App() {
               {moveHistory.map((pair) => (
                 <div key={pair.num} className="history-row">
                   <span className="move-num">{pair.num}.</span>
-                  <span className="move-white">{pair.white} {pair.whiteIcon}</span>
-                  <span className="move-black">{pair.black} {pair.blackIcon}</span>
+                  <span className="move-white">{pair.white}</span>
+                  <span className="move-black">{pair.black}</span>
                 </div>
               ))}
             </div>
@@ -595,6 +535,17 @@ export default function App() {
         </div>
 
         <p>{status}</p>
+
+        {game.isGameOver() && (
+          <div className="modal-overlay">
+            <div className="modal-card">
+              <h2>{getGameOverMessage()}</h2>
+              <button onClick={handleNewGame}>Новая игра</button>
+              <button className="secondary" onClick={handleExit}>Выйти</button>
+              <button className="secondary" onClick={() => setView('analysis')}>Анализ партии</button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )
