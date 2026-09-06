@@ -132,6 +132,66 @@ export default function App() {
     return g.fen()
   }
 
+  function goToPly(p) {
+    const clamped = Math.max(0, Math.min(verboseHistory.length, p))
+    setAnalysisPly(clamped)
+  }
+
+  // Оценка позиции при перемотке — сразу, без значков
+  useEffect(() => {
+    if (view !== 'analysis') return
+    let cancelled = false
+    async function run() {
+      const fen = fenAtPly(analysisPly)
+      const result = await evaluatePosition(fen, 12)
+      if (cancelled) return
+      const g = new Chess(fen)
+      const sideToMove = g.turn()
+      const normalized = result.score
+        ? (sideToMove === 'w' ? result.score : { ...result.score, value: -result.score.value })
+        : null
+      setAnalysisEval(normalized)
+    }
+    run()
+    return () => { cancelled = true }
+  }, [analysisPly, view])
+
+  // Полный разбор партии по кнопке — считает значки для всех ходов
+  async function runFullAnalysis() {
+    if (analyzing) return
+    setAnalyzing(true)
+    const state = analysisRef.current
+    state.evalHistory = []
+    state.annotations = []
+
+    const totalPlies = verboseHistory.length
+
+    const startResult = await evaluatePosition(new Chess().fen(), 14)
+    state.evalHistory.push(startResult)
+    setAnalysisProgress(1)
+
+    for (let ply = 1; ply <= totalPlies; ply++) {
+      const fen = fenAtPly(ply)
+      const result = await evaluatePosition(fen, 14)
+      state.evalHistory.push(result)
+
+      const moveIndex = ply - 1
+      const move = verboseHistory[moveIndex]
+      const prevEntry = state.evalHistory[moveIndex]
+      const currEntry = state.evalHistory[ply]
+      const uciMove = move.from + move.to + (move.promotion || '')
+      const afterGame = new Chess(fen)
+      const hanging = isPieceHanging(afterGame, move.to)
+
+      const classification = classifyMove({ prevEntry, currEntry, uciMove, piece: move.piece, hanging })
+      state.annotations[moveIndex] = classification
+      setAnalysisProgress(ply + 1)
+      setAnalysisTick((t) => t + 1)
+    }
+
+    setAnalyzing(false)
+  }
+
   async function createRoom() {
     const id = generateRoomId()
     const createdAt = Date.now()
@@ -191,6 +251,11 @@ export default function App() {
     setRoomData(null)
     setView('create')
     window.history.replaceState(null, '', window.location.pathname)
+  }
+
+  function handleAnalyze() {
+    setAnalysisPly(verboseHistory.length)
+    setView('analysis')
   }
 
   function getMoveOptions(square) {
@@ -464,21 +529,88 @@ export default function App() {
     )
   }
 
-  // ---------- РЕЖИМ АНАЛИЗА (заглушка, доработаем следующим шагом) ----------
+  // ---------- РЕЖИМ АНАЛИЗА ----------
   if (view === 'analysis') {
+    const displayFen = fenAtPly(analysisPly)
+    const lastMove = analysisPly > 0 ? verboseHistory[analysisPly - 1] : null
+    const lastMoveIcon = lastMove ? analysisRef.current.annotations[analysisPly - 1] : null
+    const analysisSquareStyles = lastMove && lastMoveIcon
+      ? { [lastMove.to]: iconBackgroundStyle(lastMoveIcon) }
+      : {}
+
+    const pairs = []
+    for (let i = 0; i < verboseHistory.length; i += 2) {
+      const wIcon = analysisRef.current.annotations[i]
+      const bIcon = verboseHistory[i + 1] ? analysisRef.current.annotations[i + 1] : null
+      pairs.push({
+        num: i / 2 + 1,
+        white: verboseHistory[i]?.san,
+        whiteIcon: wIcon ? MOVE_ICONS[wIcon] : '',
+        whitePly: i + 1,
+        black: verboseHistory[i + 1]?.san || '',
+        blackIcon: bIcon ? MOVE_ICONS[bIcon] : '',
+        blackPly: i + 2,
+      })
+    }
+
     return (
       <div className="app-container">
         <div className="card board-card">
           <h2>Анализ партии</h2>
+
           <div className="board-wrapper">
+            <div className="eval-bar">
+              <div className="eval-bar-black" style={{ height: `${100 - evalToWhitePercent(analysisEval)}%` }} />
+              <div className="eval-bar-white" style={{ height: `${evalToWhitePercent(analysisEval)}%` }} />
+            </div>
             <div className="board-inner">
               <Chessboard
-                position={game.fen()}
+                position={displayFen}
                 boardOrientation={color === 'w' ? 'white' : 'black'}
                 arePiecesDraggable={false}
+                customSquareStyles={analysisSquareStyles}
+                customDarkSquareStyle={{ backgroundColor: '#4a4a68' }}
+                customLightSquareStyle={{ backgroundColor: '#e8e8f0' }}
               />
             </div>
           </div>
+
+          <div className="nav-controls">
+            <button className="tc-btn" onClick={() => goToPly(0)}>|◀</button>
+            <button className="tc-btn" onClick={() => goToPly(analysisPly - 1)}>◀</button>
+            <button className="tc-btn" onClick={() => goToPly(analysisPly + 1)}>▶</button>
+            <button className="tc-btn" onClick={() => goToPly(verboseHistory.length)}>▶|</button>
+          </div>
+
+          <button onClick={runFullAnalysis} disabled={analyzing}>
+            {analyzing ? `Анализирую... ${analysisProgress}/${verboseHistory.length + 1}` : 'Показать оценки ходов'}
+          </button>
+
+          <div className="history-panel">
+            <h3>История ходов</h3>
+            <div className="history-list">
+              {pairs.map((pair) => (
+                <div key={pair.num} className="history-row">
+                  <span className="move-num">{pair.num}.</span>
+                  <span
+                    className={analysisPly === pair.whitePly ? 'move-white move-active' : 'move-white'}
+                    onClick={() => goToPly(pair.whitePly)}
+                  >
+                    {pair.white} {pair.whiteIcon}
+                  </span>
+                  {pair.black && (
+                    <span
+                      className={analysisPly === pair.blackPly ? 'move-black move-active' : 'move-black'}
+                      onClick={() => goToPly(pair.blackPly)}
+                    >
+                      {pair.black} {pair.blackIcon}
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+
           <button className="secondary" onClick={handleExit}>Выйти в меню</button>
         </div>
       </div>
@@ -547,7 +679,7 @@ export default function App() {
               <h2>{getGameOverMessage()}</h2>
               <button onClick={handleNewGame}>Новая игра</button>
               <button className="secondary" onClick={handleExit}>Выйти</button>
-              <button className="secondary" onClick={() => setView('analysis')}>Анализ партии</button>
+              <button className="secondary" onClick={handleAnalyze}>Анализ партии</button>
             </div>
           </div>
         )}
