@@ -3,7 +3,7 @@ let readyPromise = null
 
 function getWorker() {
   if (!worker) {
-    worker = new Worker('https://cdn.jsdelivr.net/npm/stockfish@16.0.0/src/stockfish-nnue-16-single.js')
+    worker = new Worker('/stockfish/stockfish-18-lite-single.js')
   }
   return worker
 }
