@@ -68,6 +68,8 @@ export default function App() {
   const [analyzing, setAnalyzing] = useState(false)
   const [analysisProgress, setAnalysisProgress] = useState(0)
   const [analysisTick, setAnalysisTick] = useState(0)
+  const [analysisBestMove, setAnalysisBestMove] = useState(null)
+  const [showBestMoveArrow, setShowBestMoveArrow] = useState(true)
 
   const analysisRef = useRef({ evalHistory: [], annotations: [], running: false, roomId: null })
 
