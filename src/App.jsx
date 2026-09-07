@@ -475,7 +475,7 @@ export default function App() {
   }
 
   function tryMove(from, to) {
-    if (game.isGameOver()) return false
+    if (game.isGameOver() || roomData?.gameEndReason) return false
     if (game.turn() !== color) return false
 
     const gameCopy = new Chess()
