@@ -321,7 +321,7 @@ export default function App() {
     const id = generateRoomId()
     const createdAt = Date.now()
     const clock = selectedTC.initial
-      ? { whiteTime: selectedTC.initial, blackTime: selectedTC.initial, turn: 'w', turnStart: createdAt }
+      ? { whiteTime: selectedTC.initial, blackTime: selectedTC.initial, turn: 'w', turnStart: serverNow() }
       : null
 
     let actualColor = colorChoice
