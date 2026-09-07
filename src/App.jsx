@@ -478,9 +478,10 @@ export default function App() {
       const isFreeMove = verboseHistory.length < 2
 
       if (isFreeMove) {
+      if (isFreeMove) {
         // Время не тратим
       } else {
-        const elapsed = (Date.now() - clock.turnStart) / 1000
+        const elapsed = (serverNow() - clock.turnStart) / 1000
         const remaining = Math.max(
           0,
           (movingSide === 'w' ? clock.whiteTime : clock.blackTime) - elapsed + roomData.timeControl.increment
@@ -490,7 +491,7 @@ export default function App() {
       }
 
       newClock.turn = movingSide === 'w' ? 'b' : 'w'
-      newClock.turnStart = Date.now()
+      newClock.turnStart = serverNow()
       update.clock = newClock
     }
 
