@@ -225,7 +225,7 @@ export default function App() {
 
   useEffect(() => {
     if (!roomData || !roomData.clock) return
-    const interval = setInterval(() => setTick(Date.now()), 1000)
+    const interval = setInterval(() => setTick(serverNow()), 1000)
     return () => clearInterval(interval)
   }, [roomData])
 
