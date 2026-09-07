@@ -110,6 +110,14 @@ export default function App() {
   }, [])
 
   useEffect(() => {
+    const offsetNodeRef = ref(db, '.info/serverTimeOffset')
+    const unsubscribe = onValue(offsetNodeRef, (snap) => {
+      offsetRef.current = snap.val() || 0
+    })
+    return () => unsubscribe()
+  }, [])
+
+  useEffect(() => {
     if (!currentUser) {
       setIsAdmin(false)
       return
