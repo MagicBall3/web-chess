@@ -83,7 +83,11 @@ export default function App() {
 
   const analysisRef = useRef({ evalHistory: [], annotations: [], running: false, roomId: null })
   const savedGameRef = useRef(false)
+  const offsetRef = useRef(0)
 
+  function serverNow() {
+    return Date.now() + offsetRef.current
+  }
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     const existingRoom = params.get('room')
