@@ -246,7 +246,32 @@ export default function App() {
   useEffect(() => {
     analysisRef.current = { evalHistory: [], annotations: [], running: false, roomId }
     savedGameRef.current = false
+    timeoutHandledRef.current = false
   }, [roomId])
+
+  // Проверка "флажка" — если у кого-то закончилось время, завершаем партию
+  useEffect(() => {
+    if (!roomData || !roomData.clock || !roomId) return
+    if (roomData.gameEndReason) return
+    if (game.isGameOver()) return
+    if (verboseHistory.length < 2) return
+    if (timeoutHandledRef.current) return
+
+    const clock = roomData.clock
+    const elapsed = (serverNow() - clock.turnStart) / 1000
+    const whiteLeft = clock.turn === 'w' ? clock.whiteTime - elapsed : clock.whiteTime
+    const blackLeft = clock.turn === 'b' ? clock.blackTime - elapsed : clock.blackTime
+
+    if (whiteLeft <= 0 || blackLeft <= 0) {
+      timeoutHandledRef.current = true
+      const winner = whiteLeft <= 0 ? 'b' : 'w'
+      set(ref(db, 'rooms/' + roomId), {
+        ...roomData,
+        gameEndReason: 'timeout',
+        gameEndWinner: winner,
+      })
+    }
+  }, [tick, roomData, roomId])
 
   const verboseHistory = useMemo(() => game.history({ verbose: true }), [game])
 
