@@ -453,7 +453,7 @@ export default function App() {
   }
 
   function onSquareClick(square) {
-    if (game.isGameOver()) return
+    if (game.isGameOver() || roomData?.gameEndReason) return
     if (!moveFrom) {
       const piece = game.get(square)
       if (piece && piece.color === color) {
