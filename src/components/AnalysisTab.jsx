@@ -5,27 +5,9 @@ import { GameTree } from '../gameTree.js'
 import { AnalysisEngine } from '../analysisEngine.js'
 import { rankCandidates } from '../moveSelector.js'
 import { classifyMove, MOVE_ICONS } from '../moveClassifier.js'
-import {
-  STRENGTH_LEVELS,
-  MANUAL_ELO_MIN,
-  MANUAL_ELO_MAX,
-  strengthToEngineOptions,
-  strengthLabel,
-} from '../strength.js'
-
-const ANALYSIS_MODES = [
-  { key: 'engine', label: 'Engine' },
-  { key: 'human', label: 'Human' },
-  { key: 'practical', label: 'Practical' },
-  { key: 'custom', label: 'Custom Strength' },
-]
-
-const MODE_DESC = {
-  engine: 'Объективный анализ: сильнейшие ходы Stockfish без эвристик.',
-  human: 'Естественные и понятные ходы с объяснением причин.',
-  practical: 'Практически полезные решения: устойчивые и реализуемые.',
-  custom: 'Анализ с настройкой силы движка.',
-}
+import { strengthToEngineOptions, strengthLabel } from '../strength.js'
+import { uciToSan, lastMoveSquares, legalTargets, isValidFen } from '../analysisUtils.js'
+import SettingsPanel from './SettingsPanel.jsx'
 
 const DEFAULT_DEPTH = 14
 
@@ -52,16 +34,18 @@ export default function AnalysisTab({ initialPgn = null, onExit = null }) {
   const [depth, setDepth] = useState(DEFAULT_DEPTH)
   const [strength, setStrength] = useState(null)
   const [style, setStyle] = useState('balanced')
+  const [quickMode, setQuickMode] = useState(false)
   const [analysis, setAnalysis] = useState(null)
   const [analyzing, setAnalyzing] = useState(false)
   const [error, setError] = useState('')
-  const [showPgnImport, setShowPgnImport] = useState(false)
   const [pgnInput, setPgnInput] = useState('')
-  const [showFenInput, setShowFenInput] = useState(false)
   const [fenInput, setFenInput] = useState('')
   const [reviewAnnotations, setReviewAnnotations] = useState({})
   const [showArrow, setShowArrow] = useState(true)
   const [expandedIdx, setExpandedIdx] = useState(null)
+  const [orientation, setOrientation] = useState('white')
+  const [selectedSquare, setSelectedSquare] = useState(null)
+  const [showSettings, setShowSettings] = useState(false)
 
   // Загрузка начальной партии (если передана извне).
   useEffect(() => {
@@ -90,6 +74,10 @@ export default function AnalysisTab({ initialPgn = null, onExit = null }) {
   const fen = node.fen
   const sideToMove = fen.split(' ')[1] || 'w'
   const history = treeRef.current.getHistory()
+  const isRecommendationMode = mode === 'human' || mode === 'practical'
+
+  const effDepth = quickMode ? Math.min(depth, 10) : depth
+  const effMultiPv = quickMode ? Math.min(multiPv, 3) : multiPv
 
   // Автоанализ текущей позиции.
   useEffect(() => {
@@ -97,7 +85,7 @@ export default function AnalysisTab({ initialPgn = null, onExit = null }) {
     const eng = getEngine()
     setAnalyzing(true)
 
-    const opts = { fen, depth, multiPv }
+    const opts = { fen, depth: effDepth, multiPv: effMultiPv }
     if (mode === 'custom') Object.assign(opts, strengthToEngineOptions(strength))
 
     ;(async () => {
@@ -128,7 +116,7 @@ export default function AnalysisTab({ initialPgn = null, onExit = null }) {
       cancelled = true
       eng.abort()
     }
-  }, [fen, mode, depth, multiPv, strength, style])
+  }, [fen, mode, effDepth, effMultiPv, strength, style])
 
   // --- действия с деревом ---
 
@@ -148,6 +136,7 @@ export default function AnalysisTab({ initialPgn = null, onExit = null }) {
         setAnalysis(null)
         setReviewAnnotations({})
         setExpandedIdx(null)
+        setSelectedSquare(null)
       }
       return !!played
     } catch {
@@ -156,6 +145,13 @@ export default function AnalysisTab({ initialPgn = null, onExit = null }) {
   }
 
   const handleDrop = (source, target) => playMoveFromUci(source + target)
+
+  const handleSquareClick = (square) => {
+    if (selectedSquare && square !== selectedSquare) {
+      if (playMoveFromUci(selectedSquare + square)) return
+    }
+    setSelectedSquare((prev) => (prev === square ? null : square))
+  }
 
   const goToStart = () => { treeRef.current.goToStart(); setNode(treeRef.current.current) }
   const goToEnd = () => { treeRef.current.goToEnd(); setNode(treeRef.current.current) }
@@ -187,30 +183,48 @@ export default function AnalysisTab({ initialPgn = null, onExit = null }) {
     setNode(treeRef.current.current)
   }
 
+  const applyLoaded = () => {
+    setAnalysis(null)
+    setReviewAnnotations({})
+    setExpandedIdx(null)
+    setSelectedSquare(null)
+    setError('')
+  }
+
   const loadPgn = () => {
     try {
       treeRef.current.loadPgn(pgnInput)
       setNode(treeRef.current.current)
       setPgnInput('')
-      setShowPgnImport(false)
-      setAnalysis(null)
-      setReviewAnnotations({})
-      setError('')
+      applyLoaded()
     } catch (e) {
       setError('Не удалось загрузить PGN: ' + e.message)
     }
   }
 
+  const loadPgnFile = (text) => {
+    setPgnInput(text)
+    try {
+      treeRef.current.loadPgn(text)
+      setNode(treeRef.current.current)
+      setPgnInput('')
+      applyLoaded()
+    } catch (e) {
+      setError('Не удалось загрузить PGN из файла: ' + e.message)
+    }
+  }
+
   const loadFen = () => {
+    if (!isValidFen(fenInput)) {
+      setError('Некорректный FEN')
+      return
+    }
     try {
       const chess = new Chess(fenInput)
       treeRef.current.loadFen(chess.fen())
       setNode(treeRef.current.root)
       setFenInput('')
-      setShowFenInput(false)
-      setAnalysis(null)
-      setReviewAnnotations({})
-      setError('')
+      applyLoaded()
     } catch {
       setError('Некорректный FEN')
     }
@@ -229,11 +243,11 @@ export default function AnalysisTab({ initialPgn = null, onExit = null }) {
       }
 
       const evals = []
-      evals.push((await eng.analyze({ fen: treeRef.current.root.fen, depth, multiPv: 1 }))[0])
+      evals.push((await eng.analyze({ fen: treeRef.current.root.fen, depth: effDepth, multiPv: 1 }))[0])
       const annotations = {}
       for (let i = 0; i < pathNodes.length; i++) {
         const nd = pathNodes[i]
-        const res = (await eng.analyze({ fen: nd.fen, depth, multiPv: 1 }))[0]
+        const res = (await eng.analyze({ fen: nd.fen, depth: effDepth, multiPv: 1 }))[0]
         evals.push(res)
         const mv = nd.move
         const label = classifyMove({
@@ -253,9 +267,12 @@ export default function AnalysisTab({ initialPgn = null, onExit = null }) {
     }
   }
 
-  // --- производные для отрисовки ---
+  const handleClear = () => {
+    resetToStart()
+    applyLoaded()
+  }
 
-  const isRecommendationMode = mode === 'human' || mode === 'practical'
+  // --- производные для отрисовки ---
 
   const arrows = []
   if (showArrow) {
@@ -265,20 +282,29 @@ export default function AnalysisTab({ initialPgn = null, onExit = null }) {
     if (bm && bm.length >= 4) arrows.push([bm.slice(0, 2), bm.slice(2, 4)])
   }
 
-  const highlight = {}
-  if (isRecommendationMode && analysis && analysis.ranked && analysis.ranked.length) {
-    const top = analysis.ranked[0]
-    if (top.move) {
-      highlight[top.move.slice(0, 2)] = { background: 'rgba(0,200,0,0.35)' }
-      highlight[top.move.slice(2, 4)] = { background: 'rgba(0,200,0,0.35)' }
-    }
-  } else if (analysis && analysis.candidates && analysis.candidates.length) {
-    const top = analysis.candidates[0]
-    if (top && top.bestMove) {
-      highlight[top.bestMove.slice(0, 2)] = { background: 'rgba(0,150,255,0.3)' }
-      highlight[top.bestMove.slice(2, 4)] = { background: 'rgba(0,150,255,0.3)' }
+  const boardStyles = {}
+  if (selectedSquare) boardStyles[selectedSquare] = { background: 'rgba(255,220,80,0.5)' }
+  for (const sq of lastMoveSquares(node)) {
+    boardStyles[sq] = { background: 'rgba(108,92,231,0.4)' }
+  }
+  if (selectedSquare) {
+    for (const t of legalTargets(fen, selectedSquare)) {
+      boardStyles[t] = { boxShadow: 'inset 0 0 0 4px rgba(255,255,255,0.55)' }
     }
   }
+  let recMove = null
+  if (isRecommendationMode && analysis && analysis.ranked && analysis.ranked[0]) recMove = analysis.ranked[0].move
+  else if (analysis && analysis.bestMove) recMove = analysis.bestMove
+  if (recMove && recMove.length >= 4) {
+    const col = isRecommendationMode ? 'rgba(0,200,0,0.35)' : 'rgba(0,150,255,0.3)'
+    if (!boardStyles[recMove.slice(0, 2)]) boardStyles[recMove.slice(0, 2)] = { background: col }
+    if (!boardStyles[recMove.slice(2, 4)]) boardStyles[recMove.slice(2, 4)] = { background: col }
+  }
+
+  const bestMoveSan =
+    isRecommendationMode && analysis && analysis.ranked && analysis.ranked[0] && analysis.ranked[0].san
+      ? analysis.ranked[0].san
+      : uciToSan(fen, analysis && analysis.bestMove)
 
   const pairs = []
   for (let i = 0; i < history.length; i += 2) {
@@ -294,258 +320,198 @@ export default function AnalysisTab({ initialPgn = null, onExit = null }) {
   const branches = treeRef.current.childrenOf(node)
 
   return (
-    <div className="app-container">
-      <div className="card board-card">
+    <div className="an-layout">
+      <div className="an-topbar">
         <h2>Анализ партии</h2>
-
-        <div className="an-toolbar">
-          <button className="tc-btn" onClick={() => setShowPgnImport((v) => !v)}>Импорт PGN</button>
-          <button className="tc-btn" onClick={() => setShowFenInput((v) => !v)}>FEN</button>
-          <button className="tc-btn" onClick={resetToStart}>Начальная позиция</button>
-          <button className="tc-btn" onClick={goToMainLine}>К основной линии</button>
-          <button className="tc-btn" onClick={runReview} disabled={analyzing}>
-            {analyzing ? 'Идёт ревью…' : 'Ревью партии'}
+        <div className="an-topbar-actions">
+          <button className="tc-btn an-settings-btn" onClick={() => setShowSettings(true)}>
+            ⚙ Настройки
           </button>
+          {onExit && <button className="tc-btn" onClick={onExit}>В меню</button>}
         </div>
+      </div>
 
-        {showPgnImport && (
-          <div className="an-import">
-            <textarea
-              rows={4}
-              placeholder="Вставьте PGN партии…"
-              value={pgnInput}
-              onChange={(e) => setPgnInput(e.target.value)}
-            />
-            <div className="an-import-btns">
-              <button onClick={loadPgn}>Загрузить</button>
-              <button className="secondary" onClick={() => setShowPgnImport(false)}>Отмена</button>
-            </div>
-          </div>
-        )}
-
-        {showFenInput && (
-          <div className="an-import">
-            <input
-              type="text"
-              placeholder="Вставьте FEN позиции…"
-              value={fenInput}
-              onChange={(e) => setFenInput(e.target.value)}
-            />
-            <div className="an-import-btns">
-              <button onClick={loadFen}>Загрузить</button>
-              <button className="secondary" onClick={() => setShowFenInput(false)}>Отмена</button>
-            </div>
-          </div>
-        )}
-
-        <div className="an-modes">
-          {ANALYSIS_MODES.map((m) => (
-            <button
-              key={m.key}
-              className={mode === m.key ? 'tc-btn active' : 'tc-btn'}
-              onClick={() => { setMode(m.key); setExpandedIdx(null) }}
-            >
-              {m.label}
-            </button>
-          ))}
-        </div>
-        <p className="an-mode-desc">{MODE_DESC[mode]}</p>
-
-        <div className="an-settings">
-          <div className="an-setting-row">
-            <span>Глубина: {depth}</span>
-            <input
-              type="range"
-              min={8}
-              max={20}
-              value={depth}
-              onChange={(e) => setDepth(Number(e.target.value))}
-            />
-          </div>
-          <div className="an-setting-row">
-            <span>Вариантов (MultiPV):</span>
-            <select value={multiPv} onChange={(e) => setMultiPv(Number(e.target.value))}>
-              <option value={1}>1</option>
-              <option value={3}>3</option>
-              <option value={5}>5</option>
-            </select>
-          </div>
-          {mode === 'human' && (
-            <div className="an-setting-row">
-              <span>Стиль рекомендаций:</span>
-              <select value={style} onChange={(e) => setStyle(e.target.value)}>
-                <option value="balanced">Сбалансированный</option>
-                <option value="solid">Надёжный</option>
-                <option value="aggressive">Агрессивный</option>
-              </select>
-            </div>
-          )}
-        </div>
-
-        {mode === 'custom' && (
-          <div className="an-strength">
-            <div className="an-strength-levels">
-              {STRENGTH_LEVELS.map((lvl) => (
-                <button
-                  key={lvl.key}
-                  className={strength && strength.levelKey === lvl.key ? 'tc-btn active' : 'tc-btn'}
-                  onClick={() => setStrength({ levelKey: lvl.key })}
-                >
-                  {lvl.label}
-                </button>
-              ))}
-            </div>
-            <div className="an-setting-row">
-              <span>Ручной Elo: {strength && strength.manualElo != null ? strength.manualElo : 'выкл'}</span>
-              <input
-                type="range"
-                min={MANUAL_ELO_MIN}
-                max={MANUAL_ELO_MAX}
-                step={100}
-                value={strength && strength.manualElo != null ? strength.manualElo : 1500}
-                onChange={(e) => setStrength({ manualElo: Number(e.target.value) })}
-              />
-              <button className="tc-btn" onClick={() => setStrength(null)}>Maximum</button>
-            </div>
-            <p className="link-text">Текущий уровень: {strengthLabel(strength)}</p>
-          </div>
-        )}
-
-        <div className="board-wrapper">
-          <div className="eval-bar">
-            <div className="eval-bar-black" style={{ height: `${100 - evalToWhitePercent(analysis ? analysis.eval : null)}%` }} />
-            <div className="eval-bar-white" style={{ height: `${evalToWhitePercent(analysis ? analysis.eval : null)}%` }} />
-          </div>
-          <div className="board-inner">
+      <div className="an-main">
+        <div className="an-col-board">
+          <div className="an-board-wrap">
             <Chessboard
               position={fen}
+              boardOrientation={orientation}
               arePiecesDraggable
               onPieceDrop={handleDrop}
-              customSquareStyles={highlight}
+              onSquareClick={handleSquareClick}
+              customSquareStyles={boardStyles}
               customArrows={arrows}
-              customDarkSquareStyle={{ backgroundColor: '#4a4a68' }}
-              customLightSquareStyle={{ backgroundColor: '#e8e8f0' }}
+              customDarkSquareStyle={{ backgroundColor: '#3d3d5c' }}
+              customLightSquareStyle={{ backgroundColor: '#b8b8d0' }}
             />
           </div>
-        </div>
 
-        <div className="an-eval-text">
-          {analyzing ? 'Анализирую…' : `Оценка: ${formatScore(analysis ? analysis.eval : null)}`}
-        </div>
-
-        <div className="nav-controls">
-          <button className="tc-btn" onClick={goToStart}>|◀</button>
-          <button className="tc-btn" onClick={goPrev}>◀</button>
-          <button className="tc-btn" onClick={goNext}>▶</button>
-          <button className="tc-btn" onClick={goToEnd}>▶|</button>
-        </div>
-
-        <div className="nav-controls">
-          <button
-            className={showArrow ? 'tc-btn active' : 'tc-btn'}
-            onClick={() => setShowArrow((v) => !v)}
-          >
-            Стрелка: {showArrow ? 'вкл' : 'выкл'}
-          </button>
-        </div>
-
-        {(mode === 'engine' || mode === 'custom') && analysis && analysis.candidates && (
-          <div className="an-candidates">
-            <h3>
-              {mode === 'custom' ? `Кандидаты (${strengthLabel(strength)})` : 'Кандидатные ходы (Engine)'}
-            </h3>
-            {analysis.candidates.map((c) => (
-              <div key={c.multipv} className="an-cand clickable" onClick={() => playMoveFromUci(c.bestMove)}>
-                <span className="an-cand-num">{c.multipv}.</span>
-                <span className="an-cand-pv">{c.bestMove} · {c.pv.join(' ')}</span>
-                <span className="an-cand-score">{formatScore(c.score)}</span>
-                <span className="an-cand-depth">глубина {c.depth ?? '—'}</span>
-              </div>
-            ))}
+          <div className="an-info-strip">
+            <div className="an-eval-box">
+              <span className={`an-engine-dot${analyzing ? ' active' : ''}`} />
+              <span className="an-eval-num">{formatScore(analysis ? analysis.eval : null)}</span>
+            </div>
+            <div className="an-bestmove">
+              {bestMoveSan ? `Рекомендация: ${bestMoveSan}` : 'Рекомендация: —'}
+            </div>
+            <div className="an-state">{analyzing ? 'Анализирую…' : 'Готово'}</div>
           </div>
-        )}
 
-        {isRecommendationMode && analysis && analysis.ranked && (
-          <div className="an-candidates">
-            <h3>{mode === 'human' ? `Рекомендации (${style})` : 'Практические рекомендации'}</h3>
-            {analysis.ranked.map((r, idx) => (
-              <div key={idx} className="an-cand clickable" onClick={() => playMoveFromUci(r.move)}>
-                <span className="an-cand-num">{idx + 1}.</span>
-                <span className="an-cand-pv">{r.san || r.move}</span>
-                <span className="an-cand-score">Потеря: {r.loss}</span>
-                <button
-                  className="an-expand tc-btn"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    setExpandedIdx(expandedIdx === idx ? null : idx)
-                  }}
-                >
-                  {expandedIdx === idx ? 'Скрыть' : 'Почему?'}
-                </button>
-                {expandedIdx === idx && (
-                  <div className="an-reason">
-                    {r.explanations && r.explanations.length ? (
-                      r.explanations.map((x, i) => <div key={i}>• {x}</div>)
-                    ) : (
-                      <div>Нет достоверных объяснений.</div>
-                    )}
-                  </div>
-                )}
-              </div>
-            ))}
+          <div className="an-navrow">
+            <button className="tc-btn" onClick={goToStart} title="В начало">|◀</button>
+            <button className="tc-btn" onClick={goPrev} title="Назад">◀</button>
+            <button className="tc-btn" onClick={goNext} title="Вперёд">▶</button>
+            <button className="tc-btn" onClick={goToEnd} title="В конец">▶|</button>
+            <button
+              className={showArrow ? 'tc-btn active' : 'tc-btn'}
+              onClick={() => setShowArrow((v) => !v)}
+              title="Стрелка лучшего хода"
+            >
+              ⇶
+            </button>
+            <button
+              className="tc-btn"
+              onClick={() => setOrientation((o) => (o === 'white' ? 'black' : 'white'))}
+              title="Повернуть доску"
+            >
+              ⟳
+            </button>
           </div>
-        )}
+        </div>
 
-        {error && <p className="an-error">{error}</p>}
-
-        <div className="history-panel">
-          <div className="history-header">
-            <h3>История / варианты</h3>
-          </div>
-          {history.length === 0 ? (
-            <p className="link-text">Ходов ещё нет — двигай фигуры на доске.</p>
-          ) : (
-            <div className="history-list">
-              {pairs.map((pair) => (
-                <div key={pair.num} className="history-row">
-                  <span className="move-num">{pair.num}.</span>
-                  <span
-                    className={node === nodeAtPly(pair.whitePly) ? 'move-white move-active' : 'move-white'}
-                    onClick={() => goToPly(pair.whitePly)}
+        <div className="an-col-side">
+          {isRecommendationMode && analysis && analysis.ranked && (
+            <div className="an-panel">
+              <h3>{mode === 'human' ? `Рекомендации (${style})` : 'Практические рекомендации'}</h3>
+              {analysis.ranked.map((r, idx) => (
+                <div key={idx} className="an-cand clickable" onClick={() => playMoveFromUci(r.move)}>
+                  <span className="an-cand-num">{idx + 1}.</span>
+                  <span className="an-cand-pv">{r.san || r.move}</span>
+                  <span className="an-cand-score">Потеря: {r.loss}</span>
+                  <button
+                    className="an-expand tc-btn"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setExpandedIdx(expandedIdx === idx ? null : idx)
+                    }}
                   >
-                    {pair.white.san} {reviewAnnotations[pair.whitePly] ? MOVE_ICONS[reviewAnnotations[pair.whitePly]] : ''}
-                  </span>
-                  {pair.black && (
-                    <span
-                      className={node === nodeAtPly(pair.blackPly) ? 'move-black move-active' : 'move-black'}
-                      onClick={() => goToPly(pair.blackPly)}
-                    >
-                      {pair.black.san} {reviewAnnotations[pair.blackPly] ? MOVE_ICONS[reviewAnnotations[pair.blackPly]] : ''}
-                    </span>
+                    {expandedIdx === idx ? 'Скрыть' : 'Почему?'}
+                  </button>
+                  {expandedIdx === idx && (
+                    <div className="an-reason">
+                      {r.explanations && r.explanations.length ? (
+                        r.explanations.map((x, i) => <div key={i}>• {x}</div>)
+                      ) : (
+                        <div>Нет достоверных объяснений.</div>
+                      )}
+                    </div>
                   )}
                 </div>
               ))}
             </div>
           )}
 
-          {branches.length > 0 && (
-            <div className="an-branches">
-              <h4>Варианты из этой позиции</h4>
-              {branches.map((b) => (
-                <button
-                  key={b.move.from + b.move.to + (b.move.promotion || '')}
-                  className="tc-btn"
-                  onClick={() => goToNode(b)}
-                >
-                  {b.move.san} {b === node.mainChild ? '(главная)' : ''}
-                </button>
+          {(mode === 'engine' || mode === 'custom') && analysis && analysis.candidates && (
+            <div className="an-panel">
+              <h3>
+                {mode === 'custom' ? `Кандидаты (${strengthLabel(strength)})` : 'Кандидатные ходы (Engine)'}
+              </h3>
+              {analysis.candidates.map((c) => (
+                <div key={c.multipv} className="an-cand clickable" onClick={() => playMoveFromUci(c.bestMove)}>
+                  <span className="an-cand-num">{c.multipv}.</span>
+                  <span className="an-cand-pv">{c.bestMove} · {c.pv.join(' ')}</span>
+                  <span className="an-cand-score">{formatScore(c.score)}</span>
+                  <span className="an-cand-depth">глубина {c.depth ?? '—'}</span>
+                </div>
               ))}
             </div>
           )}
-        </div>
 
-        {onExit && <button className="secondary" onClick={onExit}>Выйти в меню</button>}
+          <div className="an-panel">
+            <div className="history-header">
+              <h3>Ходы / варианты</h3>
+              <button className="tc-btn" onClick={runReview} disabled={analyzing}>
+                {analyzing ? 'Ревью…' : 'Ревью'}
+              </button>
+            </div>
+            {history.length === 0 ? (
+              <p className="link-text">Ходов ещё нет — двигай фигуры на доске.</p>
+            ) : (
+              <div className="history-list">
+                {pairs.map((pair) => (
+                  <div key={pair.num} className="history-row">
+                    <span className="move-num">{pair.num}.</span>
+                    <span
+                      className={node === nodeAtPly(pair.whitePly) ? 'move-white move-active' : 'move-white'}
+                      onClick={() => goToPly(pair.whitePly)}
+                    >
+                      {pair.white.san} {reviewAnnotations[pair.whitePly] ? MOVE_ICONS[reviewAnnotations[pair.whitePly]] : ''}
+                    </span>
+                    {pair.black && (
+                      <span
+                        className={node === nodeAtPly(pair.blackPly) ? 'move-black move-active' : 'move-black'}
+                        onClick={() => goToPly(pair.blackPly)}
+                      >
+                        {pair.black.san} {reviewAnnotations[pair.blackPly] ? MOVE_ICONS[reviewAnnotations[pair.blackPly]] : ''}
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {branches.length > 0 && (
+              <div className="an-branches">
+                <h4>Варианты из этой позиции</h4>
+                {branches.map((b) => (
+                  <button
+                    key={b.move.from + b.move.to + (b.move.promotion || '')}
+                    className="tc-btn"
+                    onClick={() => goToNode(b)}
+                  >
+                    {b.move.san} {b === node.mainChild ? '(главная)' : ''}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {error && <p className="an-error">{error}</p>}
+        </div>
       </div>
+
+      <SettingsPanel
+        open={showSettings}
+        onClose={() => setShowSettings(false)}
+        mode={mode}
+        setMode={setMode}
+        strength={strength}
+        setStrength={setStrength}
+        depth={depth}
+        setDepth={setDepth}
+        multiPv={multiPv}
+        setMultiPv={setMultiPv}
+        quickMode={quickMode}
+        setQuickMode={setQuickMode}
+        style={style}
+        setStyle={setStyle}
+        error={error}
+        pgnInput={pgnInput}
+        setPgnInput={setPgnInput}
+        onLoadPgn={loadPgn}
+        onLoadPgnFile={loadPgnFile}
+        fenInput={fenInput}
+        setFenInput={setFenInput}
+        onLoadFen={loadFen}
+        onFlip={() => setOrientation((o) => (o === 'white' ? 'black' : 'white'))}
+        onStart={goToStart}
+        onEnd={goToEnd}
+        onMainLine={goToMainLine}
+        onClear={handleClear}
+        analyzing={analyzing}
+        onStop={() => engineRef.current && engineRef.current.stop()}
+      />
     </div>
   )
 

@@ -13,5 +13,6 @@
 
 ## Анализ
 - Модули анализатора: `src/analysisEngine.js` (движок: очередь, MultiPV, stop, abort, setOption, Elo, skillLevel), `src/gameTree.js` (дерево вариантов), `src/moveSelector.js` (режимы engine/human/practical + стили), `src/moveClassifier.js` (нормализация оценок), `src/heuristics.js` (реальные позиционные/тактические эвристики), `src/strength.js` (уровни силы: Skill Level / UCI_Elo). Существующий `src/stockfish.js` не тронут.
-- Вкладка «Анализ партии»: `src/components/AnalysisTab.jsx` (рендерится из `App.jsx` при `view === 'analyzer'`, кнопка в главном меню). Режимы: Engine / Human / Practical / Custom Strength; ревью — кнопка в тулбаре. Свободное перемещение фигур создаёт ветки.
+- Вкладка «Анализ партии»: `src/components/AnalysisTab.jsx` (рендерится из `App.jsx` при `view === 'analyzer'`, кнопка в главном меню). Режимы: Engine / Human / Practical / Custom Strength; ревью — кнопка в панели ходов. Свободное перемещение фигур создаёт ветки. Поворот доски (`boardOrientation`), подсветка последнего хода/выбранной клетки/возможных ходов, инфо-полоса (оценка, индикатор движка, лучший ход).
+- Настройки вынесены в `src/components/SettingsPanel.jsx` (боковая панель/нижний экран), открывается кнопкой «⚙ Настройки». Чистые хелперы — `src/analysisUtils.js` (uciToSan, lastMoveSquares, legalTargets, isValidFen, ANALYSIS_MODES, MODE_DESC). Layout «доска в центре»: `.an-main` grid, мобильный <800px — одна колонка.
 - WASM-сборка Stockfish 16 поддерживает `UCI_LimitStrength`, `UCI_Elo`, `Skill Level`, `MultiPV` (проверено по исходнику воркера).

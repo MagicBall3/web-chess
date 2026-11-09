@@ -502,3 +502,301 @@ button:disabled {
   gap: 6px;
   margin-bottom: 8px;
 }
+
+/* --- Этап 4: layout анализатора (доска в центре) --- */
+
+html,
+body {
+  overflow-x: hidden;
+}
+
+.an-layout {
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.an-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.an-topbar h2 {
+  margin: 0;
+  font-size: 18px;
+  color: #e8e8f0;
+}
+
+.an-topbar-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.an-settings-btn {
+  font-weight: 600;
+}
+
+.an-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 380px);
+  gap: 16px;
+  align-items: start;
+}
+
+.an-col-board {
+  min-width: 0;
+}
+
+.an-board-wrap {
+  width: 100%;
+  max-width: min(100%, calc(100vh - 230px));
+  margin: 0 auto;
+  aspect-ratio: 1 / 1;
+}
+
+.an-info-strip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  margin: 10px 0;
+  flex-wrap: wrap;
+}
+
+.an-eval-box {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: #23233b;
+  border-radius: 999px;
+  padding: 6px 14px;
+}
+
+.an-engine-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #555;
+  display: inline-block;
+}
+
+.an-engine-dot.active {
+  background: #6c5ce7;
+  animation: anPulse 1s ease-in-out infinite;
+}
+
+@keyframes anPulse {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 1; }
+}
+
+.an-eval-num {
+  font-family: monospace;
+  font-size: 16px;
+  font-weight: 600;
+  color: #ffd700;
+}
+
+.an-bestmove {
+  font-size: 14px;
+  color: #c8c8e0;
+}
+
+.an-state {
+  font-size: 13px;
+  color: #a0a0c0;
+}
+
+.an-navrow {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.an-navrow .tc-btn {
+  min-width: 44px;
+  min-height: 44px;
+  font-size: 16px;
+}
+
+.an-col-side {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.an-panel {
+  background: #23233b;
+  border-radius: 12px;
+  padding: 12px;
+  text-align: left;
+}
+
+.an-panel h3 {
+  margin-top: 0;
+}
+
+.an-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  margin: 8px 0;
+  color: #c8c8e0;
+}
+
+/* --- Панель настроек --- */
+
+.sp-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 50;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.sp-panel {
+  width: 420px;
+  max-width: 100%;
+  height: 100%;
+  background: #1e1e32;
+  border-left: 1px solid #3a3a5c;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+.sp-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid #3a3a5c;
+  position: sticky;
+  top: 0;
+  background: #1e1e32;
+  z-index: 2;
+}
+
+.sp-header h2 {
+  margin: 0;
+  font-size: 17px;
+}
+
+.sp-close {
+  min-width: 40px;
+  min-height: 40px;
+}
+
+.sp-body {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.sp-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sp-group h3 {
+  margin: 0;
+  font-size: 14px;
+  color: #a0a0c0;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.an-setting-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  font-size: 14px;
+}
+
+.an-setting-row input[type='range'] {
+  flex: 1;
+  min-width: 120px;
+}
+
+.an-setting-row select {
+  background: #1a1a2e;
+  color: #e8e8f0;
+  border: 1px solid #3a3a5c;
+  border-radius: 8px;
+  padding: 8px;
+  font-size: 14px;
+}
+
+.an-import-btns {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.an-import-btns button {
+  margin-top: 0;
+}
+
+.sp-group textarea,
+.sp-group input[type='text'] {
+  width: 100%;
+  background: #1a1a2e;
+  color: #e8e8f0;
+  border: 1px solid #3a3a5c;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 14px;
+  font-family: inherit;
+}
+
+.sp-group textarea:focus,
+.sp-group input[type='text']:focus {
+  outline: none;
+  border-color: #6c5ce7;
+}
+
+/* --- Адаптивность --- */
+
+@media (max-width: 800px) {
+  .an-main {
+    grid-template-columns: 1fr;
+  }
+
+  .an-board-wrap {
+    max-width: 100%;
+    width: 100%;
+  }
+
+  .an-col-side {
+    order: 2;
+  }
+
+  .sp-overlay {
+    justify-content: stretch;
+    align-items: flex-end;
+  }
+
+  .sp-panel {
+    width: 100%;
+    height: 84vh;
+    border-left: none;
+    border-top: 1px solid #3a3a5c;
+    border-radius: 16px 16px 0 0;
+  }
+}
