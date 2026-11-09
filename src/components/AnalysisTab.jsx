@@ -344,63 +344,38 @@ export default function AnalysisTab({ initialPgn = null, onExit = null }) {
 
   const branches = treeRef.current.childrenOf(node)
 
-  // Рисует SVG-график оценки позиции по сохранённым evals.
+  // Шкала оценки позиции (как в chess.com): цветная полоса с цифрами слева.
   function renderEvalGraph() {
     const points = evals
       .map((score, ply) => (score ? { ply, score } : null))
       .filter(Boolean)
-    if (points.length < 2) return <div className="an-eval-empty">Нет данных для графика</div>
+    if (points.length === 0) return <div className="an-eval-empty">Нет данных для графика</div>
 
-    const width = 340
-    const height = 100
-    const pad = 24
-    const plotW = width - pad * 2
-    const plotH = height - 24
-    const maxCp = 600
-    const zeroY = height / 2
-    const maxPly = Math.max(points[points.length - 1].ply, 1)
-
-    const toX = (ply) => pad + (ply / maxPly) * plotW
-    const toY = (cp) => {
-      const clamped = Math.max(-maxCp, Math.min(maxCp, cp))
-      return zeroY - (clamped / maxCp) * (plotH / 2)
-    }
-
-    // Линия графика
-    let path = ''
-    points.forEach((p, i) => {
-      const x = toX(p.ply)
-      const y = toY(evalCp(p.score))
-      path += (i === 0 ? 'M' : 'L') + x + ' ' + y + ' '
-    })
-
-    // Текущая позиция (последняя точка)
     const last = points[points.length - 1]
-    const cx = toX(last.ply)
-    const cy = toY(evalCp(last.score))
+    const cp = evalCp(last.score)
+    const clampedCp = Math.max(-600, Math.min(600, cp))
+    // Процент от чёрного (левый край) к белому (правый край): 0% = чёрное преимущество, 100% = белое
+    const whitePercent = ((clampedCp + 600) / 1200) * 100
 
     return (
-      <svg width={width} height={height} className="an-eval-svg" role="img" aria-label="График оценки позиции">
-        <defs>
-          <linearGradient id="evalGrad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#2d2d44" />
-            <stop offset="50%" stopColor="#1a1a2e" />
-            <stop offset="100%" stopColor="#2d2d44" />
-          </linearGradient>
-        </defs>
-        <rect x={0} y={0} width={width} height={height} fill="url(#evalGrad)" rx={6} />
-        {/* Нулевая линия */}
-        <line x1={pad} y1={zeroY} x2={width - pad} y2={zeroY} stroke="#444" strokeWidth={1} strokeDasharray="4 4" />
-        {/* Линия оценки */}
-        <path d={path} stroke="#e8e8f0" strokeWidth={2} fill="none" />
-        {/* Точка текущей позиции */}
-        <circle cx={cx} cy={cy} r={4} fill="#6c5ce7" stroke="#fff" strokeWidth={1.5} />
-        {/* Подписи */}
-        <text x={pad} y={14} fontSize="10" fill="#888" fontFamily="monospace">+3</text>
-        <text x={pad} y={height - 6} fontSize="10" fill="#888" fontFamily="monospace">-3</text>
-        <text x={width - pad - 20} y={14} fontSize="10" fill="#888" fontFamily="monospace" textAnchor="end">{last.ply}</text>
-        <text x={pad} y={14} fontSize="10" fill="#888" fontFamily="monospace" textAnchor="start">0</text>
-      </svg>
+      <div className="an-eval-bar-wrap">
+        <div className="an-eval-bar">
+          <div className="an-eval-bar-fill" style={{ width: `${whitePercent}%` }} />
+          <div className="an-eval-bar-marker" style={{ left: `${whitePercent}%` }} />
+        </div>
+        <div className="an-eval-labels">
+          <span className="an-eval-label">+3</span>
+          <span className="an-eval-label">+2</span>
+          <span className="an-eval-label">+1</span>
+          <span className="an-eval-label">0</span>
+          <span className="an-eval-label">-1</span>
+          <span className="an-eval-label">-2</span>
+          <span className="an-eval-label">-3</span>
+        </div>
+        <div className="an-eval-current">
+          {formatScore(last.score)}
+        </div>
+      </div>
     )
   }
 
