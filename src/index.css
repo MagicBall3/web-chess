@@ -320,3 +320,135 @@ button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+/* --- Анализатор (вкладка «Анализ партии») --- */
+.an-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.an-import {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.an-import textarea,
+.an-import input[type='text'] {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px;
+  border-radius: 6px;
+  border: 1px solid #5a5a7a;
+  background: #2a2a42;
+  color: #eee;
+  font-family: inherit;
+}
+
+.an-import-btns {
+  display: flex;
+  gap: 8px;
+}
+
+.an-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 10px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 8px;
+}
+
+.an-setting-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.an-setting-row input[type='range'] {
+  flex: 1;
+  min-width: 120px;
+}
+
+.an-setting-row select {
+  padding: 6px;
+  border-radius: 6px;
+  border: 1px solid #5a5a7a;
+  background: #2a2a42;
+  color: #eee;
+}
+
+.an-modes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.an-eval-text {
+  text-align: center;
+  font-size: 14px;
+  margin: 6px 0;
+  color: #ccc;
+}
+
+.an-candidates {
+  margin: 10px 0;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 8px;
+}
+
+.an-cand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  font-size: 14px;
+}
+
+.an-cand:last-child {
+  border-bottom: none;
+}
+
+.an-cand-num {
+  color: #999;
+  min-width: 22px;
+}
+
+.an-cand-pv {
+  flex: 1;
+  word-break: break-word;
+}
+
+.an-cand-score {
+  font-weight: 600;
+  color: #ffd700;
+}
+
+.an-error {
+  color: #ff6b6b;
+  font-size: 14px;
+  margin: 8px 0;
+}
+
+.an-branches {
+  margin-top: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.an-branches h4 {
+  width: 100%;
+  margin: 4px 0;
+  font-size: 14px;
+}

@@ -6,6 +6,7 @@ import { ref, onValue, set, get, remove } from 'firebase/database'
 import { evaluatePosition } from './stockfish'
 import { classifyMove, isPieceHanging, MOVE_ICONS } from './moveClassifier'
 import { subscribeToAuth, loginUser, registerUser, logoutUser } from './auth'
+import AnalysisTab from './components/AnalysisTab.jsx'
 
 const TIME_CONTROLS = [
   { key: 'unlimited', label: 'Без ограничения', initial: null, increment: 0 },
@@ -504,7 +505,6 @@ export default function App() {
       const isFreeMove = verboseHistory.length < 2
 
       if (isFreeMove) {
-      if (isFreeMove) {
         // Время не тратим
       } else {
         const elapsed = (serverNow() - clock.turnStart) / 1000
@@ -649,6 +649,7 @@ export default function App() {
 
           <button onClick={() => setView('create')}>Создать комнату</button>
           <button className="secondary" onClick={() => setView('join')}>Войти в комнату</button>
+          <button className="secondary" onClick={() => setView('analyzer')}>Анализ партии</button>
 
           {currentUser && (
             <button className="secondary" onClick={() => setView('myGames')}>Мои партии</button>
@@ -914,6 +915,10 @@ export default function App() {
         </div>
       </div>
     )
+  }
+
+  if (view === 'analyzer') {
+    return <AnalysisTab onExit={() => setView('home')} />
   }
 
   return (
