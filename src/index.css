@@ -771,6 +771,46 @@ body {
   border-color: #6c5ce7;
 }
 
+/* --- График оценки позиции --- */
+
+.an-eval-graph-wrap {
+  margin: 10px 0;
+  width: 100%;
+}
+
+.an-eval-graph-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  color: #a0a0c0;
+  margin-bottom: 6px;
+}
+
+.an-eval-graph-current {
+  font-size: 14px;
+  font-weight: 700;
+  color: #e8e8f0;
+  font-family: monospace;
+}
+
+.an-eval-graph {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+
+.an-eval-svg {
+  display: block;
+}
+
+.an-eval-empty {
+  font-size: 12px;
+  color: #888;
+  text-align: center;
+  padding: 20px;
+}
+
 /* --- Адаптивность --- */
 
 @media (max-width: 800px) {

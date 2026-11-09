@@ -24,6 +24,22 @@ function formatScore(score) {
   return (cp > 0 ? '+' : '') + cp
 }
 
+// Цвет линии графика: белый при преимуществе белых, чёрный при преимуществе чёрных.
+function evalColor(cp) {
+  if (!cp && cp !== 0) return '#888'
+  const maxCp = 600
+  const t = Math.max(0, Math.min(1, (cp + maxCp) / (2 * maxCp)))
+  const v = Math.round(120 + t * 135)
+  return `rgb(${v},${v},${v})`
+}
+
+// Оценка в сантипешках для отображения.
+function evalCp(score) {
+  if (!score) return 0
+  if (score.type === 'mate') return Math.sign(score.value) * 10000
+  return score.value
+}
+
 export default function AnalysisTab({ initialPgn = null, onExit = null }) {
   const treeRef = useRef(new GameTree())
   const engineRef = useRef(null)
@@ -41,6 +57,7 @@ export default function AnalysisTab({ initialPgn = null, onExit = null }) {
   const [pgnInput, setPgnInput] = useState('')
   const [fenInput, setFenInput] = useState('')
   const [reviewAnnotations, setReviewAnnotations] = useState({})
+  const [evals, setEvals] = useState([]) // оценка по полуходам: evals[ply] = score
   const [showArrow, setShowArrow] = useState(true)
   const [expandedIdx, setExpandedIdx] = useState(null)
   const [orientation, setOrientation] = useState('white')
@@ -94,6 +111,14 @@ export default function AnalysisTab({ initialPgn = null, onExit = null }) {
         if (cancelled) return
         const evalScore = res[0] ? res[0].score : null
         const bestMove = res[0] ? res[0].bestMove : null
+
+        // Сохраняем оценку для текущего полухода (для графика).
+        const currentPly = history.length
+        setEvals((prev) => {
+          const next = [...prev]
+          next[currentPly] = evalScore
+          return next
+        })
 
         if (mode === 'human') {
           const ranked = rankCandidates(res, { fen, sideToMove, mode: 'human', style })
@@ -319,6 +344,66 @@ export default function AnalysisTab({ initialPgn = null, onExit = null }) {
 
   const branches = treeRef.current.childrenOf(node)
 
+  // Рисует SVG-график оценки позиции по сохранённым evals.
+  function renderEvalGraph() {
+    const points = evals
+      .map((score, ply) => (score ? { ply, score } : null))
+      .filter(Boolean)
+    if (points.length < 2) return <div className="an-eval-empty">Нет данных для графика</div>
+
+    const width = 340
+    const height = 100
+    const pad = 24
+    const plotW = width - pad * 2
+    const plotH = height - 24
+    const maxCp = 600
+    const zeroY = height / 2
+    const maxPly = Math.max(points[points.length - 1].ply, 1)
+
+    const toX = (ply) => pad + (ply / maxPly) * plotW
+    const toY = (cp) => {
+      const clamped = Math.max(-maxCp, Math.min(maxCp, cp))
+      return zeroY - (clamped / maxCp) * (plotH / 2)
+    }
+
+    // Линия графика
+    let path = ''
+    points.forEach((p, i) => {
+      const x = toX(p.ply)
+      const y = toY(evalCp(p.score))
+      path += (i === 0 ? 'M' : 'L') + x + ' ' + y + ' '
+    })
+
+    // Текущая позиция (последняя точка)
+    const last = points[points.length - 1]
+    const cx = toX(last.ply)
+    const cy = toY(evalCp(last.score))
+
+    return (
+      <svg width={width} height={height} className="an-eval-svg" role="img" aria-label="График оценки позиции">
+        <defs>
+          <linearGradient id="evalGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#2d2d44" />
+            <stop offset="50%" stopColor="#1a1a2e" />
+            <stop offset="100%" stopColor="#2d2d44" />
+          </linearGradient>
+        </defs>
+        <rect x={0} y={0} width={width} height={height} fill="url(#evalGrad)" rx={6} />
+        {/* Нулевая линия */}
+        <line x1={pad} y1={zeroY} x2={width - pad} y2={zeroY} stroke="#444" strokeWidth={1} strokeDasharray="4 4" />
+        {/* Линия оценки */}
+        <path d={path} stroke="#e8e8f0" strokeWidth={2} fill="none" />
+        {/* Точка текущей позиции */}
+        <circle cx={cx} cy={cy} r={4} fill="#6c5ce7" stroke="#fff" strokeWidth={1.5} />
+        {/* Подписи */}
+        <text x={pad} y={14} fontSize="10" fill="#888" fontFamily="monospace">+3</text>
+        <text x={pad} y={height - 6} fontSize="10" fill="#888" fontFamily="monospace">-3</text>
+        <text x={width - pad - 20} y={14} fontSize="10" fill="#888" fontFamily="monospace" textAnchor="end">{last.ply}</text>
+        <text x={pad} y={14} fontSize="10" fill="#888" fontFamily="monospace" textAnchor="start">0</text>
+      </svg>
+    )
+  }
+
   return (
     <div className="an-layout">
       <div className="an-topbar">
@@ -356,6 +441,19 @@ export default function AnalysisTab({ initialPgn = null, onExit = null }) {
               {bestMoveSan ? `Рекомендация: ${bestMoveSan}` : 'Рекомендация: —'}
             </div>
             <div className="an-state">{analyzing ? 'Анализирую…' : 'Готово'}</div>
+          </div>
+
+          {/* График оценки позиции */}
+          <div className="an-eval-graph-wrap">
+            <div className="an-eval-graph-label">
+              <span>Оценка позиции</span>
+              <span className="an-eval-graph-current">
+                {analysis?.eval ? formatScore(analysis.eval) : '—'}
+              </span>
+            </div>
+            <div className="an-eval-graph">
+              {renderEvalGraph()}
+            </div>
           </div>
 
           <div className="an-navrow">
