@@ -12,5 +12,6 @@
 - Была предсуществующая синтаксическая ошибка в `src/App.jsx` (дублированная строка `if (isFreeMove) {` в `tryMove`) — ломала сборку («Unexpected end of file»). Убрана, логика часов восстановлена.
 
 ## Анализ
-- Новые модули анализатора: `src/analysisEngine.js` (движок: очередь, MultiPV, stop, abort, setOption, Elo), `src/gameTree.js` (дерево вариантов), `src/moveSelector.js` (человеческий выбор), `src/moveClassifier.js` (исправлена нормализация оценок). Существующий `src/stockfish.js` не тронут.
-- Вкладка «Анализ партии»: `src/components/AnalysisTab.jsx` (рендерится из `App.jsx` при `view === 'analyzer'`, кнопка в главном меню). Использует `gameTree` + `analysisEngine` + `moveSelector`; режимы: live, кандидаты (MultiPV), рекомендации (стили), ревью. Свободное перемещение фигур создаёт ветки.
+- Модули анализатора: `src/analysisEngine.js` (движок: очередь, MultiPV, stop, abort, setOption, Elo, skillLevel), `src/gameTree.js` (дерево вариантов), `src/moveSelector.js` (режимы engine/human/practical + стили), `src/moveClassifier.js` (нормализация оценок), `src/heuristics.js` (реальные позиционные/тактические эвристики), `src/strength.js` (уровни силы: Skill Level / UCI_Elo). Существующий `src/stockfish.js` не тронут.
+- Вкладка «Анализ партии»: `src/components/AnalysisTab.jsx` (рендерится из `App.jsx` при `view === 'analyzer'`, кнопка в главном меню). Режимы: Engine / Human / Practical / Custom Strength; ревью — кнопка в тулбаре. Свободное перемещение фигур создаёт ветки.
+- WASM-сборка Stockfish 16 поддерживает `UCI_LimitStrength`, `UCI_Elo`, `Skill Level`, `MultiPV` (проверено по исходнику воркера).

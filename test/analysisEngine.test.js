@@ -169,3 +169,13 @@ test('Elo: без заданной силы не шлёт UCI_LimitStrength', as
   await eng.analyze({ fen: START_FEN, multiPv: 1 })
   assert.ok(!w.sent.includes('setoption name UCI_LimitStrength value true'))
 })
+
+test('skillLevel: шлёт setoption Skill Level и не конфликтует с Elo', async () => {
+  const w = new FakeWorker()
+  const eng = new AnalysisEngine({ worker: w })
+  await eng.analyze({ fen: START_FEN, multiPv: 1, skillLevel: 5 })
+
+  assert.ok(w.sent.includes('setoption name Skill Level value 5'))
+  assert.ok(!w.sent.some((s) => typeof s === 'string' && s.includes('UCI_Elo')))
+  assert.ok(!w.sent.includes('setoption name UCI_LimitStrength value true'))
+})

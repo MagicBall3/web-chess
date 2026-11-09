@@ -194,10 +194,14 @@ export class AnalysisEngine {
     const w = this.worker
     const options = req.options
 
-    // Регулировка силы (UCI_Elo): включает ограничение силы и задаёт рейтинг.
+    // Регулировка силы. Используем ровно один механизм, чтобы не конфликтовать:
+    //   - elo       -> UCI_LimitStrength + UCI_Elo
+    //   - skillLevel -> Skill Level (0–20)
     if (options.elo != null) {
       w.postMessage('setoption name UCI_LimitStrength value true')
       w.postMessage('setoption name UCI_Elo value ' + options.elo)
+    } else if (options.skillLevel != null) {
+      w.postMessage('setoption name Skill Level value ' + options.skillLevel)
     }
 
     const multiPv = Math.max(1, parseInt(options.multiPv, 10) || 1)

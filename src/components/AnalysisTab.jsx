@@ -4,18 +4,30 @@ import { Chess } from 'chess.js'
 import { GameTree } from '../gameTree.js'
 import { AnalysisEngine } from '../analysisEngine.js'
 import { rankCandidates } from '../moveSelector.js'
-import { classifyMove, MOVE_ICONS, MOVE_LABELS } from '../moveClassifier.js'
+import { classifyMove, MOVE_ICONS } from '../moveClassifier.js'
+import {
+  STRENGTH_LEVELS,
+  MANUAL_ELO_MIN,
+  MANUAL_ELO_MAX,
+  strengthToEngineOptions,
+  strengthLabel,
+} from '../strength.js'
 
 const ANALYSIS_MODES = [
-  { key: 'live', label: 'Live-оценка' },
-  { key: 'candidates', label: 'Кандидаты' },
-  { key: 'human', label: 'Рекомендации' },
-  { key: 'review', label: 'Ревью партии' },
+  { key: 'engine', label: 'Engine' },
+  { key: 'human', label: 'Human' },
+  { key: 'practical', label: 'Practical' },
+  { key: 'custom', label: 'Custom Strength' },
 ]
 
+const MODE_DESC = {
+  engine: 'Объективный анализ: сильнейшие ходы Stockfish без эвристик.',
+  human: 'Естественные и понятные ходы с объяснением причин.',
+  practical: 'Практически полезные решения: устойчивые и реализуемые.',
+  custom: 'Анализ с настройкой силы движка.',
+}
+
 const DEFAULT_DEPTH = 14
-const MIN_ELO = 600
-const MAX_ELO = 2800
 
 function evalToWhitePercent(score) {
   if (!score) return 50
@@ -35,10 +47,10 @@ export default function AnalysisTab({ initialPgn = null, onExit = null }) {
   const engineRef = useRef(null)
 
   const [node, setNode] = useState(treeRef.current.root)
-  const [mode, setMode] = useState('live')
+  const [mode, setMode] = useState('engine')
   const [multiPv, setMultiPv] = useState(3)
   const [depth, setDepth] = useState(DEFAULT_DEPTH)
-  const [elo, setElo] = useState(null)
+  const [strength, setStrength] = useState(null)
   const [style, setStyle] = useState('balanced')
   const [analysis, setAnalysis] = useState(null)
   const [analyzing, setAnalyzing] = useState(false)
@@ -49,6 +61,7 @@ export default function AnalysisTab({ initialPgn = null, onExit = null }) {
   const [fenInput, setFenInput] = useState('')
   const [reviewAnnotations, setReviewAnnotations] = useState({})
   const [showArrow, setShowArrow] = useState(true)
+  const [expandedIdx, setExpandedIdx] = useState(null)
 
   // Загрузка начальной партии (если передана извне).
   useEffect(() => {
@@ -78,32 +91,31 @@ export default function AnalysisTab({ initialPgn = null, onExit = null }) {
   const sideToMove = fen.split(' ')[1] || 'w'
   const history = treeRef.current.getHistory()
 
-  // Автоанализ текущей позиции (кроме режима ревью).
+  // Автоанализ текущей позиции.
   useEffect(() => {
-    if (mode === 'review') return
     let cancelled = false
     const eng = getEngine()
     setAnalyzing(true)
+
+    const opts = { fen, depth, multiPv }
+    if (mode === 'custom') Object.assign(opts, strengthToEngineOptions(strength))
+
     ;(async () => {
       try {
-        if (mode === 'live') {
-          const res = await eng.analyze({ fen, depth, multiPv: 1, elo })
-          if (!cancelled) {
-            setAnalysis({
-              eval: res[0] ? res[0].score : null,
-              bestMove: res[0] ? res[0].bestMove : null,
-              candidates: res,
-            })
-          }
+        const res = await eng.analyze(opts)
+        if (cancelled) return
+        const evalScore = res[0] ? res[0].score : null
+        const bestMove = res[0] ? res[0].bestMove : null
+
+        if (mode === 'human') {
+          const ranked = rankCandidates(res, { fen, sideToMove, mode: 'human', style })
+          setAnalysis({ candidates: res, ranked, eval: evalScore, bestMove })
+        } else if (mode === 'practical') {
+          const ranked = rankCandidates(res, { fen, sideToMove, mode: 'practical' })
+          setAnalysis({ candidates: res, ranked, eval: evalScore, bestMove })
         } else {
-          const res = await eng.analyze({ fen, depth, multiPv, elo })
-          if (cancelled) return
-          if (mode === 'human') {
-            const ranked = rankCandidates(res, { fen, sideToMove, style })
-            setAnalysis({ candidates: res, ranked })
-          } else {
-            setAnalysis({ candidates: res })
-          }
+          // engine / custom — объективно
+          setAnalysis({ candidates: res, eval: evalScore, bestMove })
         }
       } catch (e) {
         if (!cancelled) setError(String(e.message || e))
@@ -111,34 +123,39 @@ export default function AnalysisTab({ initialPgn = null, onExit = null }) {
         if (!cancelled) setAnalyzing(false)
       }
     })()
+
     return () => {
       cancelled = true
       eng.abort()
     }
-  }, [fen, mode, depth, multiPv, elo, style])
+  }, [fen, mode, depth, multiPv, strength, style])
 
   // --- действия с деревом ---
 
-  const handleDrop = (source, target) => {
+  const playMoveFromUci = (uci) => {
+    if (!uci || uci.length < 4) return false
     const legal = treeRef.current.legalMoves()
-    const match = legal.find((m) => m.from === source && m.to === target)
+    const match = legal.find((m) => m.from === uci.slice(0, 2) && m.to === uci.slice(2, 4))
     if (!match) return false
     try {
       const played = treeRef.current.playMove({
-        from: source,
-        to: target,
+        from: match.from,
+        to: match.to,
         promotion: match.promotion ? 'q' : undefined,
       })
       if (played) {
         setNode(played)
         setAnalysis(null)
         setReviewAnnotations({})
+        setExpandedIdx(null)
       }
       return !!played
     } catch {
       return false
     }
   }
+
+  const handleDrop = (source, target) => playMoveFromUci(source + target)
 
   const goToStart = () => { treeRef.current.goToStart(); setNode(treeRef.current.current) }
   const goToEnd = () => { treeRef.current.goToEnd(); setNode(treeRef.current.current) }
@@ -212,11 +229,11 @@ export default function AnalysisTab({ initialPgn = null, onExit = null }) {
       }
 
       const evals = []
-      evals.push((await eng.analyze({ fen: treeRef.current.root.fen, depth, multiPv: 1, elo }))[0])
+      evals.push((await eng.analyze({ fen: treeRef.current.root.fen, depth, multiPv: 1 }))[0])
       const annotations = {}
       for (let i = 0; i < pathNodes.length; i++) {
         const nd = pathNodes[i]
-        const res = (await eng.analyze({ fen: nd.fen, depth, multiPv: 1, elo }))[0]
+        const res = (await eng.analyze({ fen: nd.fen, depth, multiPv: 1 }))[0]
         evals.push(res)
         const mv = nd.move
         const label = classifyMove({
@@ -238,20 +255,24 @@ export default function AnalysisTab({ initialPgn = null, onExit = null }) {
 
   // --- производные для отрисовки ---
 
+  const isRecommendationMode = mode === 'human' || mode === 'practical'
+
   const arrows = []
-  if (showArrow && analysis && analysis.bestMove) {
-    const bm = analysis.bestMove
-    if (bm.length >= 4) arrows.push([bm.slice(0, 2), bm.slice(2, 4)])
+  if (showArrow) {
+    const bm = isRecommendationMode && analysis && analysis.ranked && analysis.ranked[0]
+      ? analysis.ranked[0].move
+      : analysis && analysis.bestMove
+    if (bm && bm.length >= 4) arrows.push([bm.slice(0, 2), bm.slice(2, 4)])
   }
 
   const highlight = {}
-  if (mode === 'human' && analysis && analysis.ranked && analysis.ranked.length) {
+  if (isRecommendationMode && analysis && analysis.ranked && analysis.ranked.length) {
     const top = analysis.ranked[0]
     if (top.move) {
       highlight[top.move.slice(0, 2)] = { background: 'rgba(0,200,0,0.35)' }
       highlight[top.move.slice(2, 4)] = { background: 'rgba(0,200,0,0.35)' }
     }
-  } else if (mode === 'candidates' && analysis && analysis.candidates && analysis.candidates.length) {
+  } else if (analysis && analysis.candidates && analysis.candidates.length) {
     const top = analysis.candidates[0]
     if (top && top.bestMove) {
       highlight[top.bestMove.slice(0, 2)] = { background: 'rgba(0,150,255,0.3)' }
@@ -282,6 +303,9 @@ export default function AnalysisTab({ initialPgn = null, onExit = null }) {
           <button className="tc-btn" onClick={() => setShowFenInput((v) => !v)}>FEN</button>
           <button className="tc-btn" onClick={resetToStart}>Начальная позиция</button>
           <button className="tc-btn" onClick={goToMainLine}>К основной линии</button>
+          <button className="tc-btn" onClick={runReview} disabled={analyzing}>
+            {analyzing ? 'Идёт ревью…' : 'Ревью партии'}
+          </button>
         </div>
 
         {showPgnImport && (
@@ -314,22 +338,20 @@ export default function AnalysisTab({ initialPgn = null, onExit = null }) {
           </div>
         )}
 
-        <div className="an-settings">
-          <div className="an-setting-row">
-            <span>Сила: {elo ? `Elo ${elo}` : 'Максимум'}</span>
-            <input
-              type="range"
-              min={MIN_ELO}
-              max={MAX_ELO}
-              step={100}
-              disabled={!elo}
-              value={elo ?? MAX_ELO}
-              onChange={(e) => setElo(Number(e.target.value))}
-            />
-            <button className="tc-btn" onClick={() => setElo(elo ? null : 1500)}>
-              {elo ? 'Снять ограничение' : 'Ограничить силу'}
+        <div className="an-modes">
+          {ANALYSIS_MODES.map((m) => (
+            <button
+              key={m.key}
+              className={mode === m.key ? 'tc-btn active' : 'tc-btn'}
+              onClick={() => { setMode(m.key); setExpandedIdx(null) }}
+            >
+              {m.label}
             </button>
-          </div>
+          ))}
+        </div>
+        <p className="an-mode-desc">{MODE_DESC[mode]}</p>
+
+        <div className="an-settings">
           <div className="an-setting-row">
             <span>Глубина: {depth}</span>
             <input
@@ -360,17 +382,34 @@ export default function AnalysisTab({ initialPgn = null, onExit = null }) {
           )}
         </div>
 
-        <div className="an-modes">
-          {ANALYSIS_MODES.map((m) => (
-            <button
-              key={m.key}
-              className={mode === m.key ? 'tc-btn active' : 'tc-btn'}
-              onClick={() => setMode(m.key)}
-            >
-              {m.label}
-            </button>
-          ))}
-        </div>
+        {mode === 'custom' && (
+          <div className="an-strength">
+            <div className="an-strength-levels">
+              {STRENGTH_LEVELS.map((lvl) => (
+                <button
+                  key={lvl.key}
+                  className={strength && strength.levelKey === lvl.key ? 'tc-btn active' : 'tc-btn'}
+                  onClick={() => setStrength({ levelKey: lvl.key })}
+                >
+                  {lvl.label}
+                </button>
+              ))}
+            </div>
+            <div className="an-setting-row">
+              <span>Ручной Elo: {strength && strength.manualElo != null ? strength.manualElo : 'выкл'}</span>
+              <input
+                type="range"
+                min={MANUAL_ELO_MIN}
+                max={MANUAL_ELO_MAX}
+                step={100}
+                value={strength && strength.manualElo != null ? strength.manualElo : 1500}
+                onChange={(e) => setStrength({ manualElo: Number(e.target.value) })}
+              />
+              <button className="tc-btn" onClick={() => setStrength(null)}>Maximum</button>
+            </div>
+            <p className="link-text">Текущий уровень: {strengthLabel(strength)}</p>
+          </div>
+        )}
 
         <div className="board-wrapper">
           <div className="eval-bar">
@@ -406,37 +445,52 @@ export default function AnalysisTab({ initialPgn = null, onExit = null }) {
             className={showArrow ? 'tc-btn active' : 'tc-btn'}
             onClick={() => setShowArrow((v) => !v)}
           >
-            Стрелка лучшего хода: {showArrow ? 'вкл' : 'выкл'}
+            Стрелка: {showArrow ? 'вкл' : 'выкл'}
           </button>
         </div>
 
-        {mode === 'review' && (
-          <button onClick={runReview} disabled={analyzing}>
-            {analyzing ? 'Идёт ревью…' : 'Запустить ревью партии'}
-          </button>
-        )}
-
-        {mode === 'candidates' && analysis && analysis.candidates && (
+        {(mode === 'engine' || mode === 'custom') && analysis && analysis.candidates && (
           <div className="an-candidates">
-            <h3>Кандидатные ходы</h3>
+            <h3>
+              {mode === 'custom' ? `Кандидаты (${strengthLabel(strength)})` : 'Кандидатные ходы (Engine)'}
+            </h3>
             {analysis.candidates.map((c) => (
-              <div key={c.multipv} className="an-cand">
+              <div key={c.multipv} className="an-cand clickable" onClick={() => playMoveFromUci(c.bestMove)}>
                 <span className="an-cand-num">{c.multipv}.</span>
                 <span className="an-cand-pv">{c.bestMove} · {c.pv.join(' ')}</span>
                 <span className="an-cand-score">{formatScore(c.score)}</span>
+                <span className="an-cand-depth">глубина {c.depth ?? '—'}</span>
               </div>
             ))}
           </div>
         )}
 
-        {mode === 'human' && analysis && analysis.ranked && (
+        {isRecommendationMode && analysis && analysis.ranked && (
           <div className="an-candidates">
-            <h3>Рекомендации ({style})</h3>
+            <h3>{mode === 'human' ? `Рекомендации (${style})` : 'Практические рекомендации'}</h3>
             {analysis.ranked.map((r, idx) => (
-              <div key={idx} className="an-cand">
+              <div key={idx} className="an-cand clickable" onClick={() => playMoveFromUci(r.move)}>
                 <span className="an-cand-num">{idx + 1}.</span>
                 <span className="an-cand-pv">{r.san || r.move}</span>
                 <span className="an-cand-score">Потеря: {r.loss}</span>
+                <button
+                  className="an-expand tc-btn"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setExpandedIdx(expandedIdx === idx ? null : idx)
+                  }}
+                >
+                  {expandedIdx === idx ? 'Скрыть' : 'Почему?'}
+                </button>
+                {expandedIdx === idx && (
+                  <div className="an-reason">
+                    {r.explanations && r.explanations.length ? (
+                      r.explanations.map((x, i) => <div key={i}>• {x}</div>)
+                    ) : (
+                      <div>Нет достоверных объяснений.</div>
+                    )}
+                  </div>
+                )}
               </div>
             ))}
           </div>

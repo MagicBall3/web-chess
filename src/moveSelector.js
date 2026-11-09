@@ -1,16 +1,17 @@
-// moveSelector.js — архитектурная основа «человеческого» выбора ходов.
+// moveSelector.js — ранжирование кандидатных ходов по режимам анализа.
 //
-// Принимает несколько кандидатных ходов от Stockfish (MultiPV), приводит их
-// оценки к единой перспективе, считает потерю относительно лучшего хода и
-// учитывает тактическую безопасность. Возвращает ранжированный список.
+// Режимы:
+//   engine    — чисто объективная сортировка по оценке движка (без эвристик).
+//   human     — человеческие критерии: естественность, развитие, безопасность,
+//               тактическая безопасность + стиль. Объяснения.
+//   practical — практические критерии: устойчивость, простота реализации,
+//               безопасность короля, создание угроз. Объяснения.
 //
-// Стили выбора реализованы как расширяемый реестр модификаторов ранжирования
-// (SELECTION_STYLES). Позиционные эвристики пока не реализованы: для них
-// предусмотрен хук positionalHook, который по умолчанию возвращает 0 и НЕ
-// имитирует фиктивные оценки.
+// Все эвристики берутся из heuristics.js и опираются на реальную позицию.
 
 import { Chess } from 'chess.js'
 import { isPieceHanging, scoreToCp, toWhitePerspective } from './moveClassifier.js'
+import { analyzeCandidate } from './heuristics.js'
 
 // Оценка в перспективе ходящего (выше = лучше для ходящего).
 function moverScore(score, sideToMove) {
@@ -18,106 +19,182 @@ function moverScore(score, sideToMove) {
   return sideToMove === 'w' ? cp : -cp
 }
 
-// Стили выбора. Каждый apply получает кандидата и возвращает его же с
-// полем adjustedLoss (и, при желании, note). Все модификаторы опираются на
-// реальные данные (потеря, висит ли фигура, взятие) — не на выдуманные оценки.
+// Стили человеческого выбора (модификаторы ранжирования в режиме human).
 export const SELECTION_STYLES = {
   balanced: {
     label: 'Сбалансированный',
-    apply: (c) => ({ ...c, adjustedLoss: c.loss }),
+    apply: (c) => ({ ...c, adjustedLoss: c.adjustedLoss }),
   },
   solid: {
     label: 'Надёжный',
     apply: (c) => ({
       ...c,
-      adjustedLoss: c.loss + (c.tactical.hangsAfterMove ? 60 : 0),
-      note: c.tactical.hangsAfterMove ? 'Фигура может быть побита' : '',
+      adjustedLoss: c.adjustedLoss + (c.heuristics && c.heuristics.hangsAfterMove ? 60 : 0),
+      note: c.heuristics && c.heuristics.hangsAfterMove ? 'Фигура может быть побита' : '',
     }),
   },
   aggressive: {
     label: 'Агрессивный',
     apply: (c) => ({
       ...c,
-      adjustedLoss: c.loss - (c.tactical.captures ? 30 : 0),
-      note: c.tactical.captures ? 'Взятие' : '',
+      adjustedLoss: c.adjustedLoss - (c.heuristics && c.heuristics.captures ? 30 : 0),
+      note: c.heuristics && c.heuristics.captures ? 'Взятие' : '',
     }),
   },
+}
+
+// Обогащение кандидата базовыми полями (mover, loss, san, tactical).
+function enrich(cand, fen, sideToMove) {
+  const move = cand.bestMove || (cand.pv && cand.pv[0]) || null
+  const chess = new Chess(fen)
+  let san = null
+  let captures = false
+  let hangsAfterMove = false
+
+  if (move) {
+    try {
+      const m = chess.move({
+        from: move.slice(0, 2),
+        to: move.slice(2, 4),
+        promotion: move.slice(4) || undefined,
+      })
+      if (m) {
+        san = m.san
+        captures = Boolean(m.captured)
+        hangsAfterMove = isPieceHanging(chess, m.to)
+      }
+    } catch {
+      // нелегальный ход — оставляем как есть
+    }
+  }
+
+  return {
+    multipv: cand.multipv,
+    move,
+    san,
+    scoreWhite: toWhitePerspective(cand.score, sideToMove),
+    mover: moverScore(cand.score, sideToMove),
+    depth: cand.depth,
+    pv: cand.pv,
+    tactical: { hangsAfterMove, captures },
+    loss: 0,
+    adjustedLoss: 0,
+    reason: '',
+    explanations: [],
+    heuristics: null,
+  }
+}
+
+// Человеческое ранжирование.
+function rankHuman(enriched, { maxLoss, style, positionalHook }) {
+  const pool = enriched.filter((c) => c.loss <= maxLoss)
+  const list = pool.length ? pool : [enriched[0]]
+
+  for (const c of list) {
+    const h = c.heuristics
+    let adj = c.loss
+    if (h) {
+      if (h.develops) adj -= 40
+      if (h.gainsCenter) adj -= 30
+      if (h.improvesActivity) adj -= 25
+      if (h.kingSafetyDelta > 0) adj -= 35
+      if (h.givesCheck) adj -= 20
+      if (h.captures) adj -= 15
+      if (h.attacksUndefended) adj -= 25
+      if (h.hangsAfterMove) adj += 80
+    }
+    const styleDef = SELECTION_STYLES[style] || SELECTION_STYLES.balanced
+    const applied = styleDef.apply({ ...c, adjustedLoss: adj })
+    adj = applied.adjustedLoss != null ? applied.adjustedLoss : adj
+    if (positionalHook) {
+      const d = positionalHook(c)
+      if (typeof d === 'number') adj += d
+    }
+    c.adjustedLoss = Math.max(0, adj)
+    c.explanations = h ? h.explanations : []
+    c.reason = c.explanations.join(', ')
+    c.note = applied.note || ''
+  }
+
+  list.sort((a, b) => a.adjustedLoss - b.adjustedLoss || b.mover - a.mover)
+  return list
+}
+
+// Практическое ранжирование.
+function rankPractical(enriched, { maxLoss, positionalHook }) {
+  const pool = enriched.filter((c) => c.loss <= maxLoss)
+  const list = pool.length ? pool : [enriched[0]]
+
+  for (const c of list) {
+    const h = c.heuristics
+    let adj = c.loss
+    if (h) {
+      if (h.hangsAfterMove) adj += 100
+      if (h.kingSafetyDelta < 0) adj += 60
+      if (!h.safe) adj += 40
+      if (h.develops) adj -= 30
+      if (h.gainsCenter) adj -= 25
+      if (h.attacksUndefended) adj -= 30
+      if (h.captures) adj += 10 // взятия ведут к форсированным линиям
+      if (h.givesCheck) adj += 5 // шахи тоже могут быть форсированными
+    }
+    if (positionalHook) {
+      const d = positionalHook(c)
+      if (typeof d === 'number') adj += d
+    }
+    c.adjustedLoss = Math.max(0, adj)
+    c.explanations = h ? h.explanations : []
+    c.reason = c.explanations.join(', ')
+    c.note = ''
+  }
+
+  list.sort((a, b) => a.adjustedLoss - b.adjustedLoss || b.mover - a.mover)
+  return list
 }
 
 /**
  * Ранжирование кандидатных ходов.
  * @param {Array} candidates — результаты анализа движка (AnalysisResult[])
  * @param {object} options
- * @param {string} [options.fen]        — FEN позиции (для тактической проверки)
- * @param {'w'|'b'} [options.sideToMove]— сторона, чей ход
- * @param {string} [options.style]       — ключ стиля из SELECTION_STYLES
- * @param {Function} [options.positionalHook] — расширяемый хук позиционных
- *   характеристик: (candidate) => number (дельта к adjustedLoss). По умолчанию 0.
- * @returns {Array} ранжированный список (лучший первый)
+ * @param {string} options.fen — FEN позиции
+ * @param {'w'|'b'} [options.sideToMove] — сторона, чей ход
+ * @param {'engine'|'human'|'practical'} [options.mode] — режим анализа
+ * @param {number} [options.maxLoss] — порог допустимой потери (cp) для human/practical
+ * @param {string} [options.style] — стиль человеческого выбора
+ * @param {Function} [options.positionalHook] — расширяемый хук
+ * @returns {Array} ранжированный список
  */
-export function rankCandidates(candidates, { fen, sideToMove = 'w', style = 'balanced', positionalHook = null } = {}) {
+export function rankCandidates(
+  candidates,
+  { fen, sideToMove = 'w', mode = 'engine', maxLoss = 120, style = 'balanced', positionalHook = null } = {}
+) {
   if (!Array.isArray(candidates) || candidates.length === 0) return []
 
-  const enriched = candidates.map((cand) => {
-    const move = cand.bestMove || (cand.pv && cand.pv[0]) || null
-
-    const mine = new Chess(fen)
-    let san = null
-    let captures = false
-    let hangsAfterMove = false
-
-    if (mine && move) {
-      try {
-        const m = mine.move({
-          from: move.slice(0, 2),
-          to: move.slice(2, 4),
-          promotion: move.slice(4) || undefined,
-        })
-        if (m) {
-          san = m.san
-          captures = Boolean(m.captured)
-          hangsAfterMove = isPieceHanging(mine, m.to)
-        }
-      } catch {
-        // нелегальный ход — оставляем как есть
-      }
-    }
-
-    return {
-      multipv: cand.multipv,
-      move,
-      san,
-      scoreWhite: toWhitePerspective(cand.score, sideToMove),
-      mover: moverScore(cand.score, sideToMove),
-      depth: cand.depth,
-      pv: cand.pv,
-      tactical: { hangsAfterMove, captures },
-      loss: 0,
-      adjustedLoss: 0,
-      note: '',
-    }
-  })
-
-  // Ранжирование по перспективе ходящего: выше — лучше.
+  const enriched = candidates.map((cand) => enrich(cand, fen, sideToMove))
   enriched.sort((a, b) => b.mover - a.mover)
   const bestMover = enriched[0].mover
   for (const c of enriched) {
     c.loss = Math.max(0, bestMover - c.mover)
   }
 
-  const styleDef = SELECTION_STYLES[style] || SELECTION_STYLES.balanced
-  for (const c of enriched) {
-    const applied = styleDef.apply(c)
-    c.adjustedLoss = applied.adjustedLoss != null ? applied.adjustedLoss : c.loss
-    c.note = applied.note || c.note || ''
-
-    const delta = positionalHook ? positionalHook(c) : 0
-    if (typeof delta === 'number' && delta !== 0) {
-      c.adjustedLoss += delta
+  if (mode === 'engine') {
+    // Чисто объективный порядок: без эвристик.
+    for (const c of enriched) {
+      c.adjustedLoss = c.loss
+      c.reason = ''
+      c.explanations = []
     }
+    return enriched
   }
 
-  // Финальная сортировка: по скорректированной потере, затем по объективной оценке.
-  enriched.sort((a, b) => a.adjustedLoss - b.adjustedLoss || b.mover - a.mover)
-  return enriched
+  // human / practical: вычисляем реальные эвристики.
+  for (const c of enriched) {
+    c.heuristics = analyzeCandidate({ fen, move: c.move, sideToMove })
+  }
+
+  if (mode === 'practical') {
+    return rankPractical(enriched, { maxLoss, positionalHook })
+  }
+
+  return rankHuman(enriched, { maxLoss, style, positionalHook })
 }

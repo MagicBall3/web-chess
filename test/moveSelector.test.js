@@ -42,25 +42,33 @@ test('стиль solid штрафует ходы, после которых фи
     { multipv: 1, score: { type: 'cp', value: 0 }, pv: ['d1e2'], bestMove: 'd1e2' },
     { multipv: 2, score: { type: 'cp', value: -40 }, pv: ['d1d2'], bestMove: 'd1d2' },
   ]
-  const balanced = rankCandidates(c, { fen: HANGING_FEN, sideToMove: 'w', style: 'balanced' })
-  const solid = rankCandidates(c, { fen: HANGING_FEN, sideToMove: 'w', style: 'solid' })
+  const balanced = rankCandidates(c, { fen: HANGING_FEN, sideToMove: 'w', mode: 'human', style: 'balanced' })
+  const solid = rankCandidates(c, { fen: HANGING_FEN, sideToMove: 'w', mode: 'human', style: 'solid' })
 
-  assert.equal(balanced[1].tactical.hangsAfterMove, true)
-  assert.equal(balanced[1].adjustedLoss, 40)
-  assert.equal(solid[1].adjustedLoss, 40 + 60)
-  assert.ok(solid[1].note.length > 0)
+  const bD2 = balanced.find((x) => x.move === 'd1d2')
+  const sD2 = solid.find((x) => x.move === 'd1d2')
+  assert.equal(bD2.tactical.hangsAfterMove, true)
+  assert.ok(sD2.adjustedLoss > bD2.adjustedLoss, 'solid должен штрафовать висящую фигуру сильнее')
+  assert.ok(sD2.note.length > 0)
 })
 
 test('стиль aggressive поощряет взятия', () => {
+  // Прямая проверка модификатора: взятие уменьшает adjustedLoss на 30.
+  const applied = SELECTION_STYLES.aggressive.apply({
+    tactical: { captures: true, hangsAfterMove: false },
+    heuristics: { captures: true },
+    adjustedLoss: 50,
+  })
+  assert.equal(applied.adjustedLoss, 20)
+
+  // Интеграционная проверка: в режиме human взятие распознаётся.
   const c = [
     { multipv: 1, score: { type: 'cp', value: 0 }, pv: ['d1e2'], bestMove: 'd1e2' },
     { multipv: 2, score: { type: 'cp', value: -20 }, pv: ['d1d8'], bestMove: 'd1d8' },
   ]
-  const aggressive = rankCandidates(c, { fen: HANGING_FEN, sideToMove: 'w', style: 'aggressive' })
-  // d1d8 — взятие ладьи, штраф за потерю уменьшается
+  const aggressive = rankCandidates(c, { fen: HANGING_FEN, sideToMove: 'w', mode: 'human', style: 'aggressive' })
   const capt = aggressive.find((x) => x.move === 'd1d8')
   assert.equal(capt.tactical.captures, true)
-  assert.equal(capt.adjustedLoss, 20 - 30)
 })
 
 test('positionalHook: расширяемый хук добавляет дельту к adjustedLoss', () => {
@@ -68,15 +76,24 @@ test('positionalHook: расширяемый хук добавляет дель�
     { multipv: 1, score: { type: 'cp', value: 0 }, pv: ['d1e2'], bestMove: 'd1e2' },
     { multipv: 2, score: { type: 'cp', value: -40 }, pv: ['d1d2'], bestMove: 'd1d2' },
   ]
-  const ranked = rankCandidates(c, {
+  const withHook = rankCandidates(c, {
     fen: HANGING_FEN,
     sideToMove: 'w',
+    mode: 'human',
     style: 'balanced',
     positionalHook: (x) => (x.move === 'd1d2' ? 500 : 0),
   })
-  assert.equal(ranked[0].move, 'd1e2')
-  assert.equal(ranked[1].move, 'd1d2')
-  assert.equal(ranked[1].adjustedLoss, 40 + 500)
+  const withoutHook = rankCandidates(c, {
+    fen: HANGING_FEN,
+    sideToMove: 'w',
+    mode: 'human',
+    style: 'balanced',
+  })
+
+  assert.equal(withHook[0].move, 'd1e2')
+  const d2Hook = withHook.find((x) => x.move === 'd1d2')
+  const d2No = withoutHook.find((x) => x.move === 'd1d2')
+  assert.equal(d2Hook.adjustedLoss, d2No.adjustedLoss + 500)
 })
 
 test('пустой список кандидатов возвращает []', () => {
@@ -87,4 +104,53 @@ test('реестр стилей содержит ожидаемые ключи',
   assert.ok(SELECTION_STYLES.balanced)
   assert.ok(SELECTION_STYLES.solid)
   assert.ok(SELECTION_STYLES.aggressive)
+})
+
+const ITALIAN_FEN = 'r1bqk1nr/pppp1ppp/2n5/2b1p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4'
+
+test('Engine mode: чистая объективная сортировка без эвристик', () => {
+  const ranked = rankCandidates(cands, { fen: START_FEN, sideToMove: 'w', mode: 'engine' })
+  assert.equal(ranked[0].move, 'e2e4')
+  assert.equal(ranked[0].loss, 0)
+  assert.equal(ranked[1].loss, 30)
+  assert.equal(ranked[2].loss, 80)
+  assert.equal(ranked[0].heuristics, null)
+  assert.equal(ranked[0].adjustedLoss, ranked[0].loss)
+})
+
+test('Human mode: тактически опасный ход понижается', () => {
+  const c = [
+    { multipv: 1, score: { type: 'cp', value: 0 }, pv: ['d1e2'], bestMove: 'd1e2' },
+    { multipv: 2, score: { type: 'cp', value: -40 }, pv: ['d1d2'], bestMove: 'd1d2' },
+  ]
+  const ranked = rankCandidates(c, { fen: HANGING_FEN, sideToMove: 'w', mode: 'human' })
+  assert.equal(ranked[0].move, 'd1e2')
+})
+
+test('Human mode: формируются объяснения для естественных ходов', () => {
+  const c = [{ multipv: 1, score: { type: 'cp', value: 0 }, pv: ['b1c3'], bestMove: 'b1c3' }]
+  const ranked = rankCandidates(c, { fen: ITALIAN_FEN, sideToMove: 'w', mode: 'human' })
+  assert.ok(ranked[0].explanations.length > 0)
+  assert.ok(ranked[0].reason.length > 0)
+})
+
+test('порог maxLoss исключает плохие альтернативы', () => {
+  const c = [
+    { multipv: 1, score: { type: 'cp', value: 0 }, pv: ['d1e2'], bestMove: 'd1e2' },
+    { multipv: 2, score: { type: 'cp', value: -300 }, pv: ['d1d2'], bestMove: 'd1d2' },
+  ]
+  const ranked = rankCandidates(c, { fen: HANGING_FEN, sideToMove: 'w', mode: 'human', maxLoss: 120 })
+  assert.equal(ranked.length, 1)
+  assert.equal(ranked[0].move, 'd1e2')
+})
+
+test('Practical mode: ранжирует и возвращает объяснения', () => {
+  const c = [
+    { multipv: 1, score: { type: 'cp', value: 0 }, pv: ['b1c3'], bestMove: 'b1c3' },
+    { multipv: 2, score: { type: 'cp', value: -20 }, pv: ['d2d4'], bestMove: 'd2d4' },
+  ]
+  const ranked = rankCandidates(c, { fen: ITALIAN_FEN, sideToMove: 'w', mode: 'practical' })
+  assert.equal(ranked.length, 2)
+  assert.equal(typeof ranked[0].adjustedLoss, 'number')
+  assert.ok(Array.isArray(ranked[0].explanations))
 })
